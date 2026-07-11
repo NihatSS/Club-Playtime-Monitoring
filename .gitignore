@@ -1,0 +1,27 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Secrets / user-specific app settings
+appsettings.Development.json
+appsettings.Production.json
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+
+# Node/Vite
+node_modules/
+dist/
+.vite/
+
+# Logs and local env
+*.log
+.env
+.env.*
+
+# Windows reserved names
+nul

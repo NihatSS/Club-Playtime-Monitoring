@@ -1,0 +1,63 @@
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (40ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT "MigrationId", "ProductVersion"
+      FROM "__EFMigrationsHistory"
+      ORDER BY "MigrationId";
+info: Microsoft.EntityFrameworkCore.Migrations[20405]
+      No migrations were applied. The database is already up to date.
+info: ClubPlaytime.Api.BackgroundServices.PlayerMonitoringHostedService[0]
+      Player monitoring background service started.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT "p"."Id", "p"."AvatarUrl", "p"."Club", "p"."CreatedAt", "p"."CurrentlyPlaying", "p"."IsOnline", "p"."LastSeenPlaying", "p"."ProfileUrl", "p"."RobloxUserId", "p"."TotalPlaySeconds", "p"."UpdatedAt", "p"."Username"
+      FROM "Players" AS "p"
+      ORDER BY "p"."Username"
+info: ClubPlaytime.Api.Services.PlayerMonitorRunner[0]
+      No players to check.
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5121
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\user\OneDrive\Desktop\Club-Playtime\ClubPlaytime.Api
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT "p"."Id", "p"."AvatarUrl", "p"."Club", "p"."CreatedAt", "p"."CurrentlyPlaying", "p"."IsOnline", "p"."LastSeenPlaying", "p"."ProfileUrl", "p"."RobloxUserId", "p"."TotalPlaySeconds", "p"."UpdatedAt", "p"."Username"
+      FROM "Players" AS "p"
+      ORDER BY "p"."Username"
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (9ms) [Parameters=[@__date_0='?' (DbType = Date)], CommandType='Text', CommandTimeout='30']
+      SELECT "d"."PlayerId", "d"."Id", "d"."Date", "d"."PlaySeconds"
+      FROM "DailyPlaytime" AS "d"
+      WHERE "d"."Date" = @__date_0
+      ORDER BY "d"."PlayerId"
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT "p"."Id", "p"."AvatarUrl", "p"."Club", "p"."CreatedAt", "p"."CurrentlyPlaying", "p"."IsOnline", "p"."LastSeenPlaying", "p"."ProfileUrl", "p"."RobloxUserId", "p"."TotalPlaySeconds", "p"."UpdatedAt", "p"."Username"
+      FROM "Players" AS "p"
+      ORDER BY "p"."Username"
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__date_0='?' (DbType = Date)], CommandType='Text', CommandTimeout='30']
+      SELECT "d"."PlayerId", "d"."Id", "d"."Date", "d"."PlaySeconds"
+      FROM "DailyPlaytime" AS "d"
+      WHERE "d"."Date" = @__date_0
+      ORDER BY "d"."PlayerId"
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT "p"."Id", "p"."AvatarUrl", "p"."Club", "p"."CreatedAt", "p"."CurrentlyPlaying", "p"."IsOnline", "p"."LastSeenPlaying", "p"."ProfileUrl", "p"."RobloxUserId", "p"."TotalPlaySeconds", "p"."UpdatedAt", "p"."Username"
+      FROM "Players" AS "p"
+      ORDER BY "p"."Username"
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__date_0='?' (DbType = Date)], CommandType='Text', CommandTimeout='30']
+      SELECT "d"."PlayerId", "d"."Id", "d"."Date", "d"."PlaySeconds"
+      FROM "DailyPlaytime" AS "d"
+      WHERE "d"."Date" = @__date_0
+      ORDER BY "d"."PlayerId"
