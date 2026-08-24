@@ -8,10 +8,12 @@ obj/
 appsettings.Development.json
 appsettings.Production.json
 
-# Runtime data
+# Runtime data (keep root club-playtime.db for deployment)
 *.db
 *.db-shm
 *.db-wal
+!club-playtime.db
+!ClubPlaytime.Api/club-playtime.db
 
 # Node/Vite
 node_modules/

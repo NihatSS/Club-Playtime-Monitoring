@@ -1,11 +1,13 @@
 using ClubPlaytime.Api.DTOs;
 using ClubPlaytime.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClubPlaytime.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public sealed class PlayersController(IPlayerStatsService playerStatsService) : ControllerBase
 {
     [HttpGet]
@@ -23,6 +25,7 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService) : 
     }
 
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<PlayerDto>> AddPlayer(AddPlayerRequest request, CancellationToken cancellationToken)
     {
         try
@@ -37,6 +40,7 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService) : 
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> DeletePlayer(int id, CancellationToken cancellationToken)
     {
         var deleted = await playerStatsService.DeletePlayerAsync(id, cancellationToken);
@@ -44,6 +48,7 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService) : 
     }
 
     [HttpPost("{id:int}/adjust-playtime")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<PlayerDetailsDto>> AdjustPlaytime(
         int id,
         AdjustPlaytimeRequest request,
@@ -61,6 +66,7 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService) : 
     }
 
     [HttpPost("link-discord")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<PlayerDetailsDto>> LinkDiscordUser(
         LinkDiscordRequest request,
         CancellationToken cancellationToken)

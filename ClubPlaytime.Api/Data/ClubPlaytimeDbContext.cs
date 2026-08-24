@@ -11,6 +11,8 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
 
     public DbSet<PlayerActivityEvent> PlayerActivityEvents => Set<PlayerActivityEvent>();
 
+    public DbSet<User> Users => Set<User>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Player>(entity =>
@@ -43,6 +45,24 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
                 .WithMany(player => player.ActivityEvents)
                 .HasForeignKey(activity => activity.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.HasIndex(user => user.Username).IsUnique();
+            entity.Property(user => user.Username).HasMaxLength(50).IsRequired();
+            entity.Property(user => user.PasswordHash).IsRequired();
+            entity.Property(user => user.Role).HasMaxLength(10).HasDefaultValue("User");
+        });
+
+        // Seed default admin user (password: admin123)
+        modelBuilder.Entity<User>().HasData(new User
+        {
+            Id = 1,
+            Username = "admin",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"),
+            Role = "Admin",
+            CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc)
         });
     }
 }

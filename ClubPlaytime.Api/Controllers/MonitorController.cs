@@ -1,10 +1,12 @@
 using ClubPlaytime.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClubPlaytime.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = "Admin")]
 public sealed class MonitorController(IPlayerMonitorRunner monitorRunner) : ControllerBase
 {
     [HttpPost("check-now")]

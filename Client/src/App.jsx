@@ -743,13 +743,14 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <a
-              href={api.csvUrl()}
+            <button
+              type="button"
+              onClick={() => api.downloadCsv()}
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-line px-3 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
             >
               <Download className="h-4 w-4" />
               CSV
-            </a>
+            </button>
             <button
               type="button"
               onClick={runCheckNow}
