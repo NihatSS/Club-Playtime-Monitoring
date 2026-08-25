@@ -1,0 +1,13 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY ClubPlaytime.DiscordBot/ClubPlaytime.DiscordBot.csproj ClubPlaytime.DiscordBot/
+RUN dotnet restore ClubPlaytime.DiscordBot/ClubPlaytime.DiscordBot.csproj
+COPY ClubPlaytime.DiscordBot/ ClubPlaytime.DiscordBot/
+RUN dotnet publish ClubPlaytime.DiscordBot/ClubPlaytime.DiscordBot.csproj -c Release -o /app/publish --no-restore
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/publish .
+ENTRYPOINT ["dotnet", "ClubPlaytime.DiscordBot.dll"]
