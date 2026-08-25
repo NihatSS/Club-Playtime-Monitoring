@@ -93,7 +93,24 @@ builder.Services.AddDbContext<ClubPlaytimeDbContext>(options =>
     if (databaseProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
         databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
     {
-        options.UseNpgsql(builder.Configuration.GetConnectionString("PostgresConnection"));
+        var pgConn = builder.Configuration.GetConnectionString("PostgresConnection")
+                     ?? builder.Configuration["DATABASE_URL"];
+
+        // Neon/Railway may provide a URI like postgresql://user:pass@host/db?sslmode=require
+        // Railway truncates it at '=' signs, so we parse and rebuild as key=value format
+        if (!string.IsNullOrEmpty(pgConn) && pgConn.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            var uri = new Uri(pgConn);
+            var host = uri.Host;
+            var port = uri.Port > 0 ? uri.Port : 5432;
+            var database = uri.AbsolutePath.TrimStart('/');
+            var userInfo = uri.UserInfo.Split(':');
+            var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "";
+            var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+            pgConn = $"Host={host};Port={port};Database={database};Username={username};Password={password};SSL Mode=require;Trust Server Certificate=true";
+        }
+
+        options.UseNpgsql(pgConn);
     }
     else if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
     {
