@@ -24,5 +24,7 @@ public interface IPlayerStatsService
 
     Task<PlayerDetailsDto?> LinkDiscordUserAsync(string robloxUsername, string discordUserId, CancellationToken cancellationToken = default);
 
+    Task<PlayerDetailsDto?> UpdateClubAsync(int playerId, string club, CancellationToken cancellationToken = default);
+
     Task<string> ExportCsvAsync(DateOnly? from, DateOnly? to, CancellationToken cancellationToken = default);
 }

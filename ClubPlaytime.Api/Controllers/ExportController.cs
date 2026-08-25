@@ -6,7 +6,6 @@ namespace ClubPlaytime.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public sealed class ExportController(IPlayerStatsService playerStatsService) : ControllerBase
 {
     [HttpGet("playtime.csv")]

@@ -7,7 +7,6 @@ namespace ClubPlaytime.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public sealed class DashboardController(IPlayerStatsService playerStatsService) : ControllerBase
 {
     [HttpGet]

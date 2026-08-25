@@ -230,6 +230,12 @@ public sealed class LinkDiscordRequest
     public string DiscordUserId { get; set; } = string.Empty;
 }
 
+public sealed class UpdateClubRequest
+{
+    [Required, MaxLength(10)]
+    public string Club { get; set; } = string.Empty;
+}
+
 public sealed class LeaderboardPlayerDto
 {
     public int PlayerId { get; set; }

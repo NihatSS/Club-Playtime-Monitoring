@@ -3,6 +3,7 @@ using System;
 using ClubPlaytime.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ClubPlaytime.Api.Migrations
 {
     [DbContext(typeof(ClubPlaytimeDbContext))]
-    partial class ClubPlaytimeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260824171930_AddJoinRequestsTable")]
+    partial class AddJoinRequestsTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.0");
@@ -48,15 +51,13 @@ namespace ClubPlaytime.Api.Migrations
 
                     b.Property<string>("Club")
                         .IsRequired()
-                        .HasMaxLength(100)
+                        .HasMaxLength(10)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("DiscordUserId")
-                        .IsRequired()
-                        .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Note")
@@ -103,7 +104,7 @@ namespace ClubPlaytime.Api.Migrations
                     b.Property<string>("Club")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(100)
+                        .HasMaxLength(10)
                         .HasColumnType("TEXT")
                         .HasDefaultValue("PIH");
 
@@ -214,6 +215,16 @@ namespace ClubPlaytime.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PasswordHash = "$2a$11$hZO/4lH7YzWPBtaV6PRW1uAA9z4oTGKFHvsrv.XuTnsQfF1tvBvL2",
+                            Role = "Admin",
+                            Username = "admin"
+                        });
                 });
 
             modelBuilder.Entity("ClubPlaytime.Api.Models.DailyPlaytime", b =>

@@ -7,7 +7,6 @@ namespace ClubPlaytime.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public sealed class PlayersController(IPlayerStatsService playerStatsService) : ControllerBase
 {
     [HttpGet]
@@ -73,5 +72,16 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService) : 
     {
         var player = await playerStatsService.LinkDiscordUserAsync(request.RobloxUsername, request.DiscordUserId, cancellationToken);
         return player is null ? NotFound(new { message = $"Player with username '{request.RobloxUsername}' not found." }) : Ok(player);
+    }
+
+    [HttpPut("{id:int}/club")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<PlayerDetailsDto>> UpdateClub(
+        int id,
+        UpdateClubRequest request,
+        CancellationToken cancellationToken)
+    {
+        var player = await playerStatsService.UpdateClubAsync(id, request.Club, cancellationToken);
+        return player is null ? NotFound() : Ok(player);
     }
 }

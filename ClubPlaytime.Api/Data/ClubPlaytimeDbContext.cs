@@ -13,6 +13,8 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
 
     public DbSet<User> Users => Set<User>();
 
+    public DbSet<JoinRequest> JoinRequests => Set<JoinRequest>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Player>(entity =>
@@ -22,7 +24,7 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
             entity.Property(player => player.ProfileUrl).HasMaxLength(300).IsRequired();
             entity.Property(player => player.CurrentlyPlaying).HasMaxLength(200);
             entity.Property(player => player.AvatarUrl).HasMaxLength(700);
-            entity.Property(player => player.Club).HasMaxLength(10).HasDefaultValue("PIH");
+            entity.Property(player => player.Club).HasMaxLength(100).HasDefaultValue("PIH");
             entity.Property(player => player.DiscordUserId).HasMaxLength(100);
         });
 
@@ -55,14 +57,17 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
             entity.Property(user => user.Role).HasMaxLength(10).HasDefaultValue("User");
         });
 
-        // Seed default admin user (password: admin123)
-        modelBuilder.Entity<User>().HasData(new User
+        modelBuilder.Entity<JoinRequest>(entity =>
         {
-            Id = 1,
-            Username = "admin",
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"),
-            Role = "Admin",
-            CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            entity.HasIndex(r => new { r.RobloxUserId, r.Status });
+            entity.Property(r => r.RobloxUsername).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.DiscordUserId).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.Club).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.Status).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.Note).HasMaxLength(500);
+            entity.Property(r => r.ReviewedBy).HasMaxLength(50);
         });
+
+
     }
 }

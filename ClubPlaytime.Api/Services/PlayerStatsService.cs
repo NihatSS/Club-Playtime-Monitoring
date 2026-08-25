@@ -253,6 +253,20 @@ public sealed class PlayerStatsService(
         return await GetPlayerDetailsAsync(player.Id, cancellationToken);
     }
 
+    public async Task<PlayerDetailsDto?> UpdateClubAsync(int playerId, string club, CancellationToken cancellationToken = default)
+    {
+        var player = await playerRepository.GetByIdAsync(playerId, cancellationToken: cancellationToken);
+        if (player is null)
+        {
+            return null;
+        }
+
+        player.Club = club;
+        player.UpdatedAt = DateTime.UtcNow;
+        await playerRepository.SaveChangesAsync(cancellationToken);
+        return await GetPlayerDetailsAsync(playerId, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<WeeklyLeaderboardDto>> GetWeeklyLeaderboardAsync(CancellationToken cancellationToken = default)
     {
         var players = await playerRepository.GetAllAsync(trackChanges: false, cancellationToken);

@@ -90,7 +90,12 @@ builder.Services.AddAuthorization();
 var databaseProvider = builder.Configuration.GetValue<string>("Database:Provider") ?? "Sqlite";
 builder.Services.AddDbContext<ClubPlaytimeDbContext>(options =>
 {
-    if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+    if (databaseProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+        databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+    {
+        options.UseNpgsql(builder.Configuration.GetConnectionString("PostgresConnection"));
+    }
+    else if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
     {
         options.UseSqlServer(builder.Configuration.GetConnectionString("SqlServer"));
     }
@@ -120,7 +125,17 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ClubPlaytimeDbContext>();
-    dbContext.Database.Migrate();
+    if (databaseProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+        databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+    {
+        // PostgreSQL: create schema from model (existing migrations are SQLite-specific)
+        dbContext.Database.EnsureCreated();
+    }
+    else
+    {
+        // SQLite / SqlServer: apply existing migrations
+        dbContext.Database.Migrate();
+    }
 }
 
 app.UseHttpsRedirection();
