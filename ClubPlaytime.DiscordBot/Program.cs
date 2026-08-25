@@ -46,4 +46,7 @@ builder.Logging.AddDebug();
 
 var app = builder.Build();
 
+app.MapGet("/", () => "Discord bot is running.");
+app.MapGet("/health", () => Results.Ok());
+
 app.Run();
