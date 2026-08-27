@@ -31,7 +31,7 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
 
     [SlashCommand("playtime", "View playtime stats for a player")]
     public async Task PlaytimeAsync(
-        [Summary(description: "Roblox username to look up (leave blank for your linked or pre-linked account)")]
+        [Summary(description: "Roblox username to look up (leave blank to check your own account)")]
         string? playerName = null)
     {
         await DeferAsync();
@@ -414,7 +414,8 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
                 IconUrl = Context.Client.CurrentUser.GetAvatarUrl()
             })
             .WithDescription($"Could not find **{playerName}** in the database.")
-            .AddField("Did you mean to?", "Use `/link <username>` to link your account, or check the spelling and try again.")
+            .AddField("Not in the tracker?",
+                      "Go to **RRPlaytimeBot** on Roblox, then create a ticket saying you've done it.")
             .WithFooter(new EmbedFooterBuilder { Text = "Club Playtime" })
             .WithCurrentTimestamp()
             .Build();
@@ -426,14 +427,12 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
             .WithColor(BrandOrange)
             .WithAuthor(new EmbedAuthorBuilder
             {
-                Name = "⚠️ No Linked Account",
+                Name = "⚠️ Not In Tracker",
                 IconUrl = Context.Client.CurrentUser.GetAvatarUrl()
             })
-            .WithDescription("You don't have a linked account yet.")
-            .AddField("Already in the tracker?",
-                      "Ask an admin to set your Discord ID, then you're good to go!")
-            .AddField("Not added yet?",
-                      "Use `/link <username>` to link your Roblox account.")
+            .WithDescription("You're not in the tracker yet.")
+            .AddField("How to get added",
+                      "Go to **RRPlaytimeBot** on Roblox, then create a ticket saying you've done it.")
             .WithFooter(new EmbedFooterBuilder { Text = "Club Playtime" })
             .WithCurrentTimestamp()
             .Build();

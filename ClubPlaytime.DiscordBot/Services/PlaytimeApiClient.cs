@@ -49,30 +49,6 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
         }
     }
 
-    public async Task<PlayerDetailsDto?> LinkDiscordUserAsync(string robloxUsername, string discordUserId, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await httpClient.PostAsJsonAsync("players/link-discord",
-                new LinkDiscordRequest { RobloxUsername = robloxUsername, DiscordUserId = discordUserId },
-                cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadFromJsonAsync<ErrorResponse>(cancellationToken);
-                logger.LogWarning("Failed to link Discord user: {Error}", error?.Message ?? response.ReasonPhrase);
-                return null;
-            }
-
-            return await response.Content.ReadFromJsonAsync<PlayerDetailsDto>(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to link Discord user.");
-            return null;
-        }
-    }
-
     public async Task<List<LeaderboardPlayerDto>?> GetLeaderboardAsync(string period, CancellationToken cancellationToken = default)
     {
         try
@@ -135,16 +111,4 @@ public sealed class LeaderboardPlayerDto
     [JsonPropertyName("discordUserId")] public string? DiscordUserId { get; set; }
 }
 
-public sealed class LinkDiscordRequest
-{
-    [JsonPropertyName("robloxUsername")]
-    public string RobloxUsername { get; set; } = string.Empty;
 
-    [JsonPropertyName("discordUserId")]
-    public string DiscordUserId { get; set; } = string.Empty;
-}
-
-public sealed class ErrorResponse
-{
-    [JsonPropertyName("message")] public string? Message { get; set; }
-}
