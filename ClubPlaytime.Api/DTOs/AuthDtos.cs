@@ -43,3 +43,14 @@ public sealed class UserDto
     public string Role { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
 }
+
+public sealed class ImportPlaytimeRequest
+{
+    public List<ImportDailyPlaytimeDto>? DailyPlaytime { get; set; }
+}
+
+public sealed class ImportDailyPlaytimeDto{
+    public long RobloxUserId { get; set; }
+    public string Date { get; set; } = string.Empty;
+    public long PlaySeconds { get; set; }
+}

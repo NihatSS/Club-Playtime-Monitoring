@@ -63,6 +63,77 @@ public sealed class AdminController(ClubPlaytimeDbContext dbContext) : Controlle
             totalPlayersAffected = playersAffected.Count
         });
     }
+    /// <summary>
+    /// Import backup playtime data from SQLite backup.
+    /// Accepts daily playtime records and player totals.
+    /// </summary>
+    [HttpPost("import-playtime")]
+    public async Task<IActionResult> ImportPlaytime([FromBody] ImportPlaytimeRequest request)
+    {
+        if (request.DailyPlaytime is null || request.DailyPlaytime.Count == 0)
+        {
+            return BadRequest(new { message = "No daily playtime records provided." });
+        }
+
+        var importedCount = 0;
+        var skippedCount = 0;
+
+        foreach (var record in request.DailyPlaytime)
+        {
+            // Find player by RobloxUserId
+            var player = await dbContext.Players.FirstOrDefaultAsync(p => p.RobloxUserId == record.RobloxUserId);
+            if (player is null)
+            {
+                skippedCount++;
+                continue;
+            }
+
+            var date = DateOnly.Parse(record.Date);
+            var existing = await dbContext.DailyPlaytime
+                .FirstOrDefaultAsync(d => d.PlayerId == player.Id && d.Date == date);
+
+            if (existing is null)
+            {
+                dbContext.DailyPlaytime.Add(new DailyPlaytime
+                {
+                    PlayerId = player.Id,
+                    Date = date,
+                    PlaySeconds = record.PlaySeconds
+                });
+                importedCount++;
+            }
+            else if (existing.PlaySeconds < record.PlaySeconds)
+            {
+                // Keep the higher value (in case of partial data)
+                existing.PlaySeconds = record.PlaySeconds;
+                importedCount++;
+            }
+        }
+
+        // Recalculate TotalPlaySeconds for all affected players
+        var affectedRobloxIds = request.DailyPlaytime.Select(r => r.RobloxUserId).Distinct().ToList();
+        var affectedPlayers = await dbContext.Players
+            .Where(p => affectedRobloxIds.Contains(p.RobloxUserId))
+            .ToListAsync();
+
+        foreach (var player in affectedPlayers)
+        {
+            var total = await dbContext.DailyPlaytime
+                .Where(d => d.PlayerId == player.Id)
+                .SumAsync(d => d.PlaySeconds);
+            player.TotalPlaySeconds = total;
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        return Ok(new
+        {
+            imported = importedCount,
+            skipped = skippedCount,
+            playersUpdated = affectedPlayers.Count
+        });
+    }
+
     [HttpGet("users")]
     public async Task<ActionResult<IReadOnlyList<UserDto>>> GetUsers()
     {
