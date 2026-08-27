@@ -154,12 +154,33 @@ using (var scope = app.Services.CreateScope())
         dbContext.Database.Migrate();
     }
 
-    // Backfill LastSeenPlaying from CreatedAt for existing players that have never played
-    var backfilled = await dbContext.Players
-        .Where(p => p.LastSeenPlaying == null)
-        .ExecuteUpdateAsync(s => s.SetProperty(p => p.LastSeenPlaying, p => p.CreatedAt));
+    // Backfill LastSeenPlaying for players that have no last-seen timestamp yet.
+    // Priority: latest DailyPlaytime date > CreatedAt.
+    var latestDates = await dbContext.DailyPlaytime
+        .Where(d => d.PlaySeconds > 0)
+        .GroupBy(d => d.PlayerId)
+        .Select(g => new { PlayerId = g.Key, MaxDate = g.Max(d => d.Date) })
+        .ToListAsync();
+    var dateLookup = latestDates.ToDictionary(x => x.PlayerId, x => x.MaxDate);
+    var playersToBackfill = await dbContext.Players.Where(p => p.LastSeenPlaying == null).ToListAsync();
+    var backfilled = 0;
+    foreach (var player in playersToBackfill)
+    {
+        if (dateLookup.TryGetValue(player.Id, out var latestDate))
+        {
+            // Use the latest day they had playtime, end-of-day
+            player.LastSeenPlaying = latestDate.ToDateTime(TimeOnly.MaxValue);
+        }
+        else
+        {
+            // No playtime records yet, use when they were added
+            player.LastSeenPlaying = player.CreatedAt;
+        }
+        backfilled++;
+    }
     if (backfilled > 0)
     {
+        await dbContext.SaveChangesAsync();
         app.Logger.LogInformation("Backfilled LastSeenPlaying for {Count} players", backfilled);
     }
 }
