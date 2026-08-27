@@ -153,6 +153,15 @@ using (var scope = app.Services.CreateScope())
         // SQLite / SqlServer: apply existing migrations
         dbContext.Database.Migrate();
     }
+
+    // Backfill LastSeenPlaying from CreatedAt for existing players that have never played
+    var backfilled = await dbContext.Players
+        .Where(p => p.LastSeenPlaying == null)
+        .ExecuteUpdateAsync(s => s.SetProperty(p => p.LastSeenPlaying, p => p.CreatedAt));
+    if (backfilled > 0)
+    {
+        app.Logger.LogInformation("Backfilled LastSeenPlaying for {Count} players", backfilled);
+    }
 }
 
 app.UseHttpsRedirection();
