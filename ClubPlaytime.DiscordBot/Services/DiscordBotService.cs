@@ -67,8 +67,7 @@ public sealed class DiscordBotService : IHostedService
     {
         _logger.LogInformation("Discord bot connected as {BotUsername}", _client.CurrentUser.Username);
 
-        // Clear any stale slash commands left from previous deployments
-        // that no longer exist in the current module definitions.
+        // Register commands from modules, then remove any stale commands
         try
         {
             var guildId = _configuration["Discord:GuildId"];
@@ -76,16 +75,46 @@ public sealed class DiscordBotService : IHostedService
             {
                 await _interactions.RegisterCommandsToGuildAsync(guildUlong);
                 _logger.LogInformation("Registered commands to guild {GuildId}", guildId);
+                await RemoveStaleGuildCommandsAsync(guildUlong);
             }
             else
             {
                 await _interactions.RegisterCommandsGloballyAsync();
                 _logger.LogInformation("Registered commands globally.");
+                await RemoveStaleGlobalCommandsAsync();
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to register commands.");
+        }
+    }
+
+    private async Task RemoveStaleGuildCommandsAsync(ulong guildId)
+    {
+        var validNames = new HashSet<string>(_interactions.SlashCommands.Select(s => s.Name), StringComparer.OrdinalIgnoreCase);
+        var existing = await _client.Rest.GetGuildApplicationCommands(guildId);
+        foreach (var cmd in existing)
+        {
+            if (!validNames.Contains(cmd.Name))
+            {
+                _logger.LogInformation("Removing stale guild command: {CommandName}", cmd.Name);
+                await cmd.DeleteAsync();
+            }
+        }
+    }
+
+    private async Task RemoveStaleGlobalCommandsAsync()
+    {
+        var validNames = new HashSet<string>(_interactions.SlashCommands.Select(s => s.Name), StringComparer.OrdinalIgnoreCase);
+        var existing = await _client.GetGlobalApplicationCommandsAsync();
+        foreach (var cmd in existing)
+        {
+            if (!validNames.Contains(cmd.Name))
+            {
+                _logger.LogInformation("Removing stale global command: {CommandName}", cmd.Name);
+                await cmd.DeleteAsync();
+            }
         }
     }
 

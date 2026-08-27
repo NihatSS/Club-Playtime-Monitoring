@@ -162,7 +162,7 @@ public sealed class PlayerMonitorRunner(
 
         player.IsOnline = presence.IsOnline;
         player.CurrentlyPlaying = presence.IsOnline ? presence.CurrentGame : null;
-        player.LastSeenPlaying = null;
+        // Keep LastSeenPlaying intact so "last seen" still shows the last time the player was in the target game
         player.UpdatedAt = now;
 
         if (wasPlaying)
