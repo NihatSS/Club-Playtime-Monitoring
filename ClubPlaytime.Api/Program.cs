@@ -154,24 +154,31 @@ using (var scope = app.Services.CreateScope())
         dbContext.Database.Migrate();
     }
 
-    // One-time data wipe: delete all DailyPlaytime rows and reset TotalPlaySeconds.
-    // All historical playtime was inflated by the LastSeenPlaying bug, so we start fresh.
-    // The fixed tracker will rebuild accurate data from this point forward.
-    var dailyCount = await dbContext.DailyPlaytime.CountAsync();
-    if (dailyCount > 0)
+    // Fix today's inflated playtime: delete today's DailyPlaytime rows and subtract from totals.
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var todayRows = await dbContext.DailyPlaytime.Where(d => d.Date == today).ToListAsync();
+    if (todayRows.Count > 0)
     {
-        dbContext.DailyPlaytime.RemoveRange(dbContext.DailyPlaytime);
-        app.Logger.LogInformation("Wiped {Count} DailyPlaytime records", dailyCount);
-    }
+        // Subtract each player's today total from their TotalPlaySeconds before deleting
+        var todayByPlayer = todayRows.GroupBy(d => d.PlayerId)
+            .ToDictionary(g => g.Key, g => g.Sum(d => d.PlaySeconds));
+        var affectedPlayers = await dbContext.Players
+            .Where(p => todayByPlayer.Keys.Contains(p.Id))
+            .ToListAsync();
+        foreach (var player in affectedPlayers)
+        {
+            var subtract = todayByPlayer.GetValueOrDefault(player.Id, 0);
+            player.TotalPlaySeconds = Math.Max(0, player.TotalPlaySeconds - subtract);
+        }
 
-    var playersWithPlaytime = await dbContext.Players.Where(p => p.TotalPlaySeconds > 0).ToListAsync();
-    foreach (var player in playersWithPlaytime)
+        dbContext.DailyPlaytime.RemoveRange(todayRows);
+        await dbContext.SaveChangesAsync();
+        app.Logger.LogInformation("Wiped {Count} today's DailyPlaytime records and adjusted totals", todayRows.Count);
+    }
+    else
     {
-        player.TotalPlaySeconds = 0;
+        app.Logger.LogInformation("No inflated playtime records found for today.");
     }
-
-    await dbContext.SaveChangesAsync();
-    app.Logger.LogInformation("Reset TotalPlaySeconds for {Count} players", playersWithPlaytime.Count);
 }
 
 app.UseHttpsRedirection();
