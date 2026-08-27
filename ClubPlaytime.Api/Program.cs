@@ -154,31 +154,7 @@ using (var scope = app.Services.CreateScope())
         dbContext.Database.Migrate();
     }
 
-    // Fix today's inflated playtime: delete today's DailyPlaytime rows and subtract from totals.
-    var today = DateOnly.FromDateTime(DateTime.UtcNow);
-    var todayRows = await dbContext.DailyPlaytime.Where(d => d.Date == today).ToListAsync();
-    if (todayRows.Count > 0)
-    {
-        // Subtract each player's today total from their TotalPlaySeconds before deleting
-        var todayByPlayer = todayRows.GroupBy(d => d.PlayerId)
-            .ToDictionary(g => g.Key, g => g.Sum(d => d.PlaySeconds));
-        var affectedPlayers = await dbContext.Players
-            .Where(p => todayByPlayer.Keys.Contains(p.Id))
-            .ToListAsync();
-        foreach (var player in affectedPlayers)
-        {
-            var subtract = todayByPlayer.GetValueOrDefault(player.Id, 0);
-            player.TotalPlaySeconds = Math.Max(0, player.TotalPlaySeconds - subtract);
-        }
 
-        dbContext.DailyPlaytime.RemoveRange(todayRows);
-        await dbContext.SaveChangesAsync();
-        app.Logger.LogInformation("Wiped {Count} today's DailyPlaytime records and adjusted totals", todayRows.Count);
-    }
-    else
-    {
-        app.Logger.LogInformation("No inflated playtime records found for today.");
-    }
 }
 
 app.UseHttpsRedirection();
