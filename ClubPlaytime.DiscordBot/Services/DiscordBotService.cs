@@ -67,21 +67,25 @@ public sealed class DiscordBotService : IHostedService
     {
         _logger.LogInformation("Discord bot connected as {BotUsername}", _client.CurrentUser.Username);
 
-        var guildId = _configuration["Discord:GuildId"];
-        if (string.IsNullOrWhiteSpace(guildId))
+        // Clear any stale slash commands left from previous deployments
+        // that no longer exist in the current module definitions.
+        try
         {
-            _logger.LogInformation("Discord GuildId not set. Registering commands globally.");
-            await _interactions.RegisterCommandsGloballyAsync();
+            var guildId = _configuration["Discord:GuildId"];
+            if (ulong.TryParse(guildId, out var guildUlong))
+            {
+                await _interactions.RegisterCommandsToGuildAsync(guildUlong);
+                _logger.LogInformation("Registered commands to guild {GuildId}", guildId);
+            }
+            else
+            {
+                await _interactions.RegisterCommandsGloballyAsync();
+                _logger.LogInformation("Registered commands globally.");
+            }
         }
-        else if (ulong.TryParse(guildId, out var guildUlong))
+        catch (Exception ex)
         {
-            await _interactions.RegisterCommandsToGuildAsync(guildUlong);
-            _logger.LogInformation("Registered commands to guild {GuildId}", guildId);
-        }
-        else
-        {
-            _logger.LogWarning("Discord:GuildId '{GuildId}' is not a valid Discord server ID. Registering commands globally.", guildId);
-            await _interactions.RegisterCommandsGloballyAsync();
+            _logger.LogError(ex, "Failed to register commands.");
         }
     }
 
