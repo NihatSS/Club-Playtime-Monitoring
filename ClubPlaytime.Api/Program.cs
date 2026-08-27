@@ -154,44 +154,24 @@ using (var scope = app.Services.CreateScope())
         dbContext.Database.Migrate();
     }
 
-    // Fix inflated playtime: cap daily records to 24h and recalculate totals.
-    const long maxDailySeconds = 86_400;
-    var dailyRows = await dbContext.DailyPlaytime.ToListAsync();
-    var cappedCount = 0;
-    foreach (var row in dailyRows)
+    // One-time data wipe: delete all DailyPlaytime rows and reset TotalPlaySeconds.
+    // All historical playtime was inflated by the LastSeenPlaying bug, so we start fresh.
+    // The fixed tracker will rebuild accurate data from this point forward.
+    var dailyCount = await dbContext.DailyPlaytime.CountAsync();
+    if (dailyCount > 0)
     {
-        if (row.PlaySeconds > maxDailySeconds)
-        {
-            row.PlaySeconds = maxDailySeconds;
-            cappedCount++;
-        }
+        dbContext.DailyPlaytime.RemoveRange(dbContext.DailyPlaytime);
+        app.Logger.LogInformation("Wiped {Count} DailyPlaytime records", dailyCount);
     }
 
-    var playerTotals = await dbContext.DailyPlaytime
-        .GroupBy(d => d.PlayerId)
-        .Select(g => new { PlayerId = g.Key, Total = g.Sum(d => d.PlaySeconds) })
-        .ToListAsync();
-    var players = await dbContext.Players.ToListAsync();
-    var recalcCount = 0;
-    foreach (var player in players)
+    var playersWithPlaytime = await dbContext.Players.Where(p => p.TotalPlaySeconds > 0).ToListAsync();
+    foreach (var player in playersWithPlaytime)
     {
-        var correctTotal = playerTotals.FirstOrDefault(t => t.PlayerId == player.Id)?.Total ?? 0;
-        if (player.TotalPlaySeconds != correctTotal)
-        {
-            player.TotalPlaySeconds = correctTotal;
-            recalcCount++;
-        }
+        player.TotalPlaySeconds = 0;
     }
 
-    if (cappedCount > 0 || recalcCount > 0)
-    {
-        await dbContext.SaveChangesAsync();
-        app.Logger.LogInformation("Fixed playtime: {Capped} daily records capped, {Recalc} player totals recalculated", cappedCount, recalcCount);
-    }
-    else
-    {
-        app.Logger.LogInformation("No inflated playtime records found.");
-    }
+    await dbContext.SaveChangesAsync();
+    app.Logger.LogInformation("Reset TotalPlaySeconds for {Count} players", playersWithPlaytime.Count);
 }
 
 app.UseHttpsRedirection();
