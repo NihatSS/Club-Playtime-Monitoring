@@ -63,6 +63,7 @@ public sealed class PlayerStatsService(
             player.AvatarUrl,
             player.Club,
             player.DiscordUserId,
+            player.CreatedAt,
             last30Days,
             recentActivity.Select(ToActivityDto).ToList());
     }

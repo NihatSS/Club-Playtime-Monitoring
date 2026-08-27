@@ -194,13 +194,15 @@ public sealed class PlayerDetailsDto
 
     public string? DiscordUserId { get; set; }
 
+    public DateTime CreatedAt { get; set; }
+
     public IReadOnlyList<DailyPlaytimeDto> Last30Days { get; set; } = Array.Empty<DailyPlaytimeDto>();
 
     public IReadOnlyList<ActivityEventDto> RecentActivity { get; set; } = Array.Empty<ActivityEventDto>();
 
     public PlayerDetailsDto() { }
 
-    public PlayerDetailsDto(int id, string username, string profileUrl, long robloxUserId, string currentStatus, string? currentGame, DateTime? lastSeenPlaying, long todayPlaySeconds, long weeklyPlaySeconds, long monthlyPlaySeconds, long totalPlaySeconds, string? avatarUrl, string club, string? discordUserId, IReadOnlyList<DailyPlaytimeDto> last30Days, IReadOnlyList<ActivityEventDto> recentActivity)
+    public PlayerDetailsDto(int id, string username, string profileUrl, long robloxUserId, string currentStatus, string? currentGame, DateTime? lastSeenPlaying, long todayPlaySeconds, long weeklyPlaySeconds, long monthlyPlaySeconds, long totalPlaySeconds, string? avatarUrl, string club, string? discordUserId, DateTime createdAt, IReadOnlyList<DailyPlaytimeDto> last30Days, IReadOnlyList<ActivityEventDto> recentActivity)
     {
         Id = id;
         Username = username;
@@ -216,6 +218,7 @@ public sealed class PlayerDetailsDto
         AvatarUrl = avatarUrl;
         Club = club;
         DiscordUserId = discordUserId;
+        CreatedAt = createdAt;
         Last30Days = last30Days;
         RecentActivity = recentActivity;
     }

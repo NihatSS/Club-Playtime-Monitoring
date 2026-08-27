@@ -73,11 +73,11 @@ public sealed class DiscordBotService : IHostedService
             var guildId = _configuration["Discord:GuildId"];
             if (ulong.TryParse(guildId, out var guildUlong))
             {
+                // Delete ALL global commands first — we only use guild commands
+                await DeleteAllGlobalCommandsAsync();
                 await _interactions.RegisterCommandsToGuildAsync(guildUlong);
                 _logger.LogInformation("Registered commands to guild {GuildId}", guildId);
                 await RemoveStaleGuildCommandsAsync(guildUlong);
-                // Also clean up any stale global commands from previous deployments
-                await RemoveStaleGlobalCommandsAsync();
             }
             else
             {
@@ -117,6 +117,16 @@ public sealed class DiscordBotService : IHostedService
                 _logger.LogInformation("Removing stale global command: {CommandName}", cmd.Name);
                 await cmd.DeleteAsync();
             }
+        }
+    }
+
+    private async Task DeleteAllGlobalCommandsAsync()
+    {
+        var existing = await _client.GetGlobalApplicationCommandsAsync();
+        foreach (var cmd in existing)
+        {
+            _logger.LogInformation("Deleting global command: {CommandName}", cmd.Name);
+            await cmd.DeleteAsync();
         }
     }
 
