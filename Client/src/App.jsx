@@ -670,7 +670,7 @@ function DetailPanel({ details, onClose, onDelete, busy, isAdmin, onClubChange }
         </div>
         <div className="space-y-2.5">
           {[
-            { label: 'First seen', value: details.lastSeenPlaying ? formatDateTime(details.lastSeenPlaying) : 'N/A' },
+            { label: 'First seen', value: details.createdAt ? formatDateTime(details.createdAt) : 'N/A' },
             { label: 'Last seen', value: details.lastSeenPlaying ? formatDateTime(details.lastSeenPlaying) : 'Never' },
             { label: 'Last seen status', value: meta.label, dot: meta.dot }
           ].map(({ label, value, dot }) => (

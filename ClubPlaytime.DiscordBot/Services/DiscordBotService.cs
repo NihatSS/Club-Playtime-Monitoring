@@ -76,6 +76,8 @@ public sealed class DiscordBotService : IHostedService
                 await _interactions.RegisterCommandsToGuildAsync(guildUlong);
                 _logger.LogInformation("Registered commands to guild {GuildId}", guildId);
                 await RemoveStaleGuildCommandsAsync(guildUlong);
+                // Also clean up any stale global commands from previous deployments
+                await RemoveStaleGlobalCommandsAsync();
             }
             else
             {
