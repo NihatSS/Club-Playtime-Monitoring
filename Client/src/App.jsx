@@ -294,24 +294,30 @@ function JoinRequestsDropdown() {
 }
 
 // ─── Card View Components ────────────────────────────────────
-function PlayerCard({ player, onSelect, selected }) {
+function PlayerCard({ player, onSelect, selected, rank }) {
   const meta = statusMeta(player.currentStatus);
   const isPlaying = player.currentStatus?.startsWith('Playing');
+  const style = rank <= 3 ? rankStyles[rank - 1] : null;
 
   return (
     <button
       type="button"
       onClick={() => onSelect(player.id)}
-      className={`group rounded-xl border bg-[#08081a] p-4 text-left transition hover:border-zinc-500/50 ${
-        selected ? 'border-neon-cyan/40 shadow-neon-cyan' : 'border-line'
+      className={`group rounded-xl border p-4 text-left transition ${
+        style
+          ? `${style.bg} ${style.border}`
+          : selected
+            ? 'border-neon-cyan/40 shadow-neon-cyan bg-[#08081a]'
+            : 'border-line bg-[#08081a] hover:border-zinc-500/50'
       }`}
     >
-      {/* Top: Avatar + Name + Status */}
+      {/* Top: Rank Badge + Avatar + Name + Status */}
       <div className="flex items-start gap-3">
+        <RankBadge rank={rank} />
         <Avatar player={player} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="truncate text-base font-semibold text-zinc-50">{player.username}</span>
+            <span className={`truncate text-base font-semibold ${style ? style.text : 'text-zinc-50'}`}>{player.username}</span>
             <span className={`inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${clubBadgeClass(player.club)}`}>
               {clubLabel(player.club)}
             </span>
@@ -335,7 +341,7 @@ function PlayerCard({ player, onSelect, selected }) {
         </div>
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Total</div>
-          <div className="mt-0.5 text-base font-semibold text-zinc-50">{formatDuration(player.totalPlaySeconds)}</div>
+          <div className={`mt-0.5 text-base font-semibold ${style ? style.text : 'text-zinc-50'}`}>{formatDuration(player.totalPlaySeconds)}</div>
         </div>
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Current Game</div>
@@ -377,7 +383,7 @@ function SortButton({ field, sortBy, sortDirection, onSort, children }) {
   );
 }
 
-function PlayersTable({ players, selectedId, onSelect, sortBy, sortDirection, onSort }) {
+function PlayersTable({ players, selectedId, onSelect, sortBy, sortDirection, onSort, startIndex = 0 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-neon-cyan/[0.08] bg-[#08081a]">
       <div className="overflow-x-auto thin-scrollbar">
@@ -401,20 +407,28 @@ function PlayersTable({ players, selectedId, onSelect, sortBy, sortDirection, on
           </thead>
           <tbody className="divide-y divide-neon-cyan/10">
             {players.map((player, index) => {
+              const globalRank = startIndex + index + 1;
+              const style = globalRank <= 3 ? rankStyles[globalRank - 1] : null;
               const meta = statusMeta(player.currentStatus);
               const isPlaying = player.currentStatus?.startsWith('Playing');
               return (
                 <tr
                   key={player.id}
                   onClick={() => onSelect(player.id)}
-                  className={`cursor-pointer transition hover:bg-neon-cyan/[0.03] ${selectedId === player.id ? 'bg-neon-cyan/[0.06]' : ''}`}
+                  className={`cursor-pointer transition ${
+                    style
+                      ? `${style.bg}`
+                      : `hover:bg-neon-cyan/[0.03] ${selectedId === player.id ? 'bg-neon-cyan/[0.06]' : ''}`
+                  }`}
                 >
-                  <td className="px-4 py-3 text-sm font-medium text-zinc-500">{index + 1}.</td>
+                  <td className="px-4 py-3">
+                    <RankBadge rank={globalRank} />
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <Avatar player={player} size="sm" />
                       <div>
-                        <div className="font-medium text-zinc-50">{player.username}</div>
+                        <div className={`font-medium ${style ? style.text : 'text-zinc-50'}`}>{player.username}</div>
                         <div className="flex items-center gap-1 text-xs text-mist">
                           <span>ID: {player.robloxUserId}</span>
                           <CopyIdButton id={player.robloxUserId} />
@@ -434,7 +448,7 @@ function PlayersTable({ players, selectedId, onSelect, sortBy, sortDirection, on
                     </span>
                   </td>
                   <td className="px-4 py-3 font-medium text-zinc-50">{formatDuration(player.todayPlaySeconds)}</td>
-                  <td className="px-4 py-3 text-zinc-300">{formatDuration(player.totalPlaySeconds)}</td>
+                  <td className={`px-4 py-3 ${style ? style.text : 'text-zinc-300'}`}>{formatDuration(player.totalPlaySeconds)}</td>
                   <td className="max-w-[200px] truncate px-4 py-3 text-mist">
                     <div className="flex items-center gap-1.5">
                       <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-neon-cyan" />
@@ -762,128 +776,6 @@ function Leaderboard({ players }) {
   );
 }
 
-// ─── Sidebar: Total Playtime Leaderboard (Card Design) ──────
-function TotalPlaytimeCard({ player, rank }) {
-  const style = rankStyles[rank - 1];
-  const meta = statusMeta(player.currentStatus);
-  const isPlaying = player.currentStatus?.startsWith('Playing');
-
-  return (
-    <div
-      className={`rounded-xl border p-3 transition ${
-        style
-          ? `${style.bg} ${style.border}`
-          : 'border-line bg-[#0a0a1a]'
-      }`}
-    >
-      <div className="flex items-start gap-2.5">
-        <RankBadge rank={rank} />
-        <Avatar player={{ username: player.username, avatarUrl: player.avatarUrl }} size="sm" />
-        <div className="min-w-0 flex-1">
-          <div className={`truncate text-sm font-semibold ${style ? style.text : 'text-zinc-100'}`}>
-            {player.username}
-          </div>
-          <div className="flex items-center gap-1 text-[10px] text-mist">
-            <span className="font-mono">ID: {player.robloxUserId}</span>
-            <CopyIdButton id={player.robloxUserId} />
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-2 flex items-center gap-1.5">
-        <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${clubBadgeClass(player.club)}`}>
-          {clubLabel(player.club)}
-        </span>
-        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${meta.badge}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-          {meta.label}
-        </span>
-      </div>
-
-      <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-        <div>
-          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Today</div>
-          <div className="mt-0.5 text-xs font-semibold text-zinc-100">{formatDuration(player.todayPlaySeconds)}</div>
-        </div>
-        <div>
-          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Total</div>
-          <div className={`mt-0.5 text-xs font-semibold ${style ? style.text : 'text-zinc-100'}`}>{formatDuration(player.totalPlaySeconds)}</div>
-        </div>
-        <div>
-          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Current Game</div>
-          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-mist">
-            <Gamepad2 className="h-2.5 w-2.5 shrink-0 text-neon-cyan" />
-            <span className="truncate">{player.currentGame ?? 'No active game'}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-2 flex items-center gap-1 text-[10px] text-mist">
-        <Clock className="h-2.5 w-2.5" />
-        <span>Last seen</span>
-        <span className="text-zinc-600">·</span>
-        {isPlaying || player.currentStatus === 'Online' ? (
-          <span className="text-neon-green font-medium">Online now</span>
-        ) : (
-          <span>{player.lastSeenPlaying ? formatDateTime(player.lastSeenPlaying) : 'Never'}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TotalPlaytimeLeaderboard({ players }) {
-  const PAGE_SIZE = 3;
-  const [page, setPage] = useState(1);
-
-  const sorted = useMemo(() => {
-    return [...players].sort((a, b) => b.totalPlaySeconds - a.totalPlaySeconds);
-  }, [players]);
-
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pagePlayers = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  if (sorted.length === 0) return null;
-
-  return (
-    <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-          <Trophy className="h-4 w-4 text-neon-purple" />
-          Total Playtime
-        </div>
-        {totalPages > 1 && (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={safePage <= 1}
-              className="grid h-6 w-6 place-items-center rounded border border-neon-cyan/[0.08] text-xs text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100 disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              ◀
-            </button>
-            <span className="text-[10px] text-zinc-500">{safePage}/{totalPages}</span>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={safePage >= totalPages}
-              className="grid h-6 w-6 place-items-center rounded border border-neon-cyan/[0.08] text-xs text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100 disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              ▶
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="space-y-2.5">
-        {pagePlayers.map((player, index) => (
-          <TotalPlaytimeCard key={player.id} player={player} rank={(safePage - 1) * PAGE_SIZE + index + 1} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main App ────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -914,6 +806,8 @@ export default function App() {
   const [view, setView] = useState('cards');
   const [sortBy, setSortBy] = useState('daily');
   const [sortDirection, setSortDirection] = useState('desc');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -1170,7 +1064,7 @@ export default function App() {
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <input
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                     placeholder="Search player..."
                     className="h-10 w-full rounded-lg border border-neon-cyan/[0.08] bg-ink py-2 pl-10 pr-3 text-sm text-zinc-50 placeholder:text-zinc-500 focus:border-zinc-500 transition"
                   />
@@ -1179,7 +1073,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <select
                     value={sortBy}
-                    onChange={(e) => { setSortBy(e.target.value); setSortDirection(e.target.value === 'username' ? 'asc' : 'desc'); }}
+                    onChange={(e) => { setSortBy(e.target.value); setSortDirection(e.target.value === 'username' ? 'asc' : 'desc'); setPage(1); }}
                     className="h-10 rounded-lg border border-neon-cyan/[0.08] bg-ink px-3 text-sm text-zinc-50"
                   >
                     <option value="daily">Daily playtime</option>
@@ -1209,7 +1103,7 @@ export default function App() {
                     <button
                       key={value}
                       type="button"
-                      onClick={() => setClubFilter(value === '__none__' ? '' : value)}
+                      onClick={() => { setClubFilter(value === '__none__' ? '' : value); setPage(1); }}
                       className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition ${
                         (value === 'all' && clubFilter === 'all') || (value === '__none__' && clubFilter === '') || clubFilter === value
                           ? 'border-zinc-500 bg-zinc-700/50 text-zinc-50'
@@ -1231,29 +1125,73 @@ export default function App() {
             </section>
 
             {/* Players */}
-            {view === 'cards' ? (
-              <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredPlayers.map((player) => (
-                  <PlayerCard key={player.id} player={player} onSelect={setSelectedId} selected={selectedId === player.id} />
-                ))}
-                {!loading && filteredPlayers.length === 0 && (
-                  <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a] p-6 text-sm text-mist">No players found</div>
-                )}
-              </section>
-            ) : (
-              <PlayersTable players={filteredPlayers} selectedId={selectedId} onSelect={setSelectedId} sortBy={sortBy} sortDirection={sortDirection} onSort={updateSort} />
-            )}
+            {(() => {
+              const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / PAGE_SIZE));
+              const safePage = Math.min(page, totalPages);
+              const pageStart = (safePage - 1) * PAGE_SIZE;
+              const pagePlayers = filteredPlayers.slice(pageStart, pageStart + PAGE_SIZE);
 
-            {/* Pagination footer */}
-            <div className="flex items-center justify-between text-xs text-zinc-500 pt-1">
-              <span>Showing 1 to {filteredPlayers.length} of {filteredPlayers.length} players</span>
-            </div>
+              return (
+                <>
+                  {view === 'cards' ? (
+                    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {pagePlayers.map((player, i) => (
+                        <PlayerCard key={player.id} player={player} onSelect={setSelectedId} selected={selectedId === player.id} rank={pageStart + i + 1} />
+                      ))}
+                      {!loading && filteredPlayers.length === 0 && (
+                        <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a] p-6 text-sm text-mist">No players found</div>
+                      )}
+                    </section>
+                  ) : (
+                    <PlayersTable players={pagePlayers} selectedId={selectedId} onSelect={setSelectedId} sortBy={sortBy} sortDirection={sortDirection} onSort={updateSort} startIndex={pageStart} />
+                  )}
+
+                  {/* Pagination */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between text-xs text-zinc-500 pt-1">
+                      <span>Showing {pageStart + 1} to {Math.min(pageStart + PAGE_SIZE, filteredPlayers.length)} of {filteredPlayers.length} players</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          disabled={safePage <= 1}
+                          className="grid h-7 w-7 place-items-center rounded border border-neon-cyan/[0.08] text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100 disabled:opacity-30"
+                        >
+                          ◀
+                        </button>
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setPage(p)}
+                            className={`grid h-7 w-7 place-items-center rounded text-[11px] font-medium transition ${
+                              p === safePage
+                                ? 'bg-zinc-700 text-zinc-50'
+                                : 'text-zinc-400 hover:bg-neon-cyan/[0.06] hover:text-zinc-100'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={safePage >= totalPages}
+                          className="grid h-7 w-7 place-items-center rounded border border-neon-cyan/[0.08] text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100 disabled:opacity-30"
+                        >
+                          ▶
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           {/* Right: Sidebar */}
           <div className="hidden w-[340px] shrink-0 space-y-4 xl:block xl:sticky xl:top-16 xl:self-start">
             <Leaderboard players={leaderboard} />
-            <TotalPlaytimeLeaderboard players={livePlayers} />
             <DetailPanel details={liveDetails} onClose={() => setSelectedId(null)} onDelete={deletePlayer} busy={busy} isAdmin={isAdmin} onClubChange={changeClub} />
           </div>
         </div>
