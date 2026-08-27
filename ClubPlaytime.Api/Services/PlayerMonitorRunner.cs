@@ -47,9 +47,20 @@ public sealed class PlayerMonitorRunner(
             var offlineCount = 0;
             var errorCount = 0;
 
+            // Reuse a single scope for all player updates instead of creating one per player
+            using var updateScope = scopeFactory.CreateScope();
+            var updatePlayerRepo = updateScope.ServiceProvider.GetRequiredService<IPlayerRepository>();
+            var updateDailyRepo = updateScope.ServiceProvider.GetRequiredService<IDailyPlaytimeRepository>();
+            var updateActivityRepo = updateScope.ServiceProvider.GetRequiredService<IActivityRepository>();
+            var updateDiscordNotifier = updateScope.ServiceProvider.GetRequiredService<IDiscordNotifier>();
+
             foreach (var player in players)
             {
                 var outcome = await ApplyPresenceResultAsync(
+                    updatePlayerRepo,
+                    updateDailyRepo,
+                    updateActivityRepo,
+                    updateDiscordNotifier,
                     player.Id,
                     presenceResults.GetValueOrDefault(player.RobloxUserId),
                     cancellationToken);
@@ -82,15 +93,14 @@ public sealed class PlayerMonitorRunner(
     }
 
     private async Task<PlayerCheckOutcome> ApplyPresenceResultAsync(
+        IPlayerRepository playerRepository,
+        IDailyPlaytimeRepository dailyPlaytimeRepository,
+        IActivityRepository activityRepository,
+        IDiscordNotifier discordNotifier,
         int playerId,
         RobloxPresenceResult? presence,
         CancellationToken cancellationToken)
     {
-        using var scope = scopeFactory.CreateScope();
-        var playerRepository = scope.ServiceProvider.GetRequiredService<IPlayerRepository>();
-        var dailyPlaytimeRepository = scope.ServiceProvider.GetRequiredService<IDailyPlaytimeRepository>();
-        var activityRepository = scope.ServiceProvider.GetRequiredService<IActivityRepository>();
-        var discordNotifier = scope.ServiceProvider.GetRequiredService<IDiscordNotifier>();
         var player = await playerRepository.GetByIdAsync(playerId, cancellationToken: cancellationToken);
 
         if (player is null)

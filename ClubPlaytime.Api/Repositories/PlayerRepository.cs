@@ -40,15 +40,12 @@ public sealed class PlayerRepository(ClubPlaytimeDbContext dbContext) : IPlayerR
 
     public async Task<Player?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
     {
-        // Normalize: trim whitespace and use case-insensitive comparison.
-        // We use client-side evaluation here because:
-        // - SQLite's LOWER() only handles ASCII, not all Unicode case mappings
-        // - Some EF Core SQL translations of string methods can be unreliable
-        // - The player list is small enough that in-memory filtering is fine
+        // Use case-insensitive comparison via EF Core translation.
+        // SQLite uses case-insensitive ASCII comparison by default for LIKE/equals.
         var normalized = (username ?? string.Empty).Trim();
-        var players = await dbContext.Players.AsNoTracking().ToListAsync(cancellationToken);
-        return players.FirstOrDefault(p =>
-            p.Username != null && p.Username.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+        return await dbContext.Players
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Username == normalized, cancellationToken);
     }
 
     public Task AddAsync(Player player, CancellationToken cancellationToken = default)

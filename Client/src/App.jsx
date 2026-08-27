@@ -691,6 +691,40 @@ function DetailPanel({ details, onClose, onDelete, busy, isAdmin, onClubChange }
 }
 
 // ─── Sidebar: Leaderboard ────────────────────────────────────
+const rankStyles = [
+  {
+    bg: 'bg-gradient-to-r from-yellow-500/10 to-yellow-600/5',
+    border: 'border-yellow-500/30',
+    badge: 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-zinc-950',
+    text: 'text-yellow-400',
+    icon: '👑'
+  },
+  {
+    bg: 'bg-gradient-to-r from-zinc-400/10 to-zinc-500/5',
+    border: 'border-zinc-400/30',
+    badge: 'bg-gradient-to-br from-zinc-300 to-zinc-500 text-zinc-950',
+    text: 'text-zinc-300',
+    icon: '🥈'
+  },
+  {
+    bg: 'bg-gradient-to-r from-amber-700/10 to-amber-800/5',
+    border: 'border-amber-700/30',
+    badge: 'bg-gradient-to-br from-amber-600 to-amber-800 text-zinc-950',
+    text: 'text-amber-600',
+    icon: '🥉'
+  }
+];
+
+function RankBadge({ rank }) {
+  const style = rankStyles[rank - 1];
+  if (!style) return <span className="w-6 text-center text-xs font-bold text-zinc-500">{rank}.</span>;
+  return (
+    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${style.badge}`}>
+      {rank}
+    </span>
+  );
+}
+
 function Leaderboard({ players }) {
   return (
     <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a] p-4">
@@ -699,17 +733,152 @@ function Leaderboard({ players }) {
         Weekly leaderboard
       </div>
       <div className="space-y-2">
-        {players.slice(0, 5).map((player, index) => (
-          <div key={player.playerId} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-neon-cyan/[0.03]">
-            <div className="w-6 text-center text-xs font-bold text-zinc-500">{index + 1}.</div>
-            <Avatar player={{ username: player.username, avatarUrl: player.avatarUrl }} size="sm" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-zinc-100">{player.username}</div>
-              <div className="text-xs text-mist">{formatDuration(player.weeklyPlaySeconds)}</div>
+        {players.slice(0, 5).map((player, index) => {
+          const isTop3 = index < 3;
+          const style = isTop3 ? rankStyles[index] : null;
+          return (
+            <div
+              key={player.playerId}
+              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 transition ${
+                isTop3
+                  ? `${style.bg} border ${style.border}`
+                  : 'hover:bg-neon-cyan/[0.03]'
+              }`}
+            >
+              <RankBadge rank={index + 1} />
+              <Avatar player={{ username: player.username, avatarUrl: player.avatarUrl }} size="sm" />
+              <div className="min-w-0 flex-1">
+                <div className={`truncate text-sm font-medium ${isTop3 ? style.text : 'text-zinc-100'}`}>
+                  {player.username}
+                </div>
+                <div className="text-xs text-mist">{formatDuration(player.weeklyPlaySeconds)}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {players.length === 0 && <div className="text-sm text-mist">No players yet</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Sidebar: Total Playtime Leaderboard (Card Design) ──────
+function TotalPlaytimeCard({ player, rank }) {
+  const style = rankStyles[rank - 1];
+  const meta = statusMeta(player.currentStatus);
+  const isPlaying = player.currentStatus?.startsWith('Playing');
+
+  return (
+    <div
+      className={`rounded-xl border p-3 transition ${
+        style
+          ? `${style.bg} ${style.border}`
+          : 'border-line bg-[#0a0a1a]'
+      }`}
+    >
+      <div className="flex items-start gap-2.5">
+        <RankBadge rank={rank} />
+        <Avatar player={{ username: player.username, avatarUrl: player.avatarUrl }} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className={`truncate text-sm font-semibold ${style ? style.text : 'text-zinc-100'}`}>
+            {player.username}
+          </div>
+          <div className="flex items-center gap-1 text-[10px] text-mist">
+            <span className="font-mono">ID: {player.robloxUserId}</span>
+            <CopyIdButton id={player.robloxUserId} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5">
+        <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${clubBadgeClass(player.club)}`}>
+          {clubLabel(player.club)}
+        </span>
+        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${meta.badge}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+          {meta.label}
+        </span>
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-3 gap-1.5">
+        <div>
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Today</div>
+          <div className="mt-0.5 text-xs font-semibold text-zinc-100">{formatDuration(player.todayPlaySeconds)}</div>
+        </div>
+        <div>
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Total</div>
+          <div className={`mt-0.5 text-xs font-semibold ${style ? style.text : 'text-zinc-100'}`}>{formatDuration(player.totalPlaySeconds)}</div>
+        </div>
+        <div>
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Current Game</div>
+          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-mist">
+            <Gamepad2 className="h-2.5 w-2.5 shrink-0 text-neon-cyan" />
+            <span className="truncate">{player.currentGame ?? 'No active game'}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-1 text-[10px] text-mist">
+        <Clock className="h-2.5 w-2.5" />
+        <span>Last seen</span>
+        <span className="text-zinc-600">·</span>
+        {isPlaying || player.currentStatus === 'Online' ? (
+          <span className="text-neon-green font-medium">Online now</span>
+        ) : (
+          <span>{player.lastSeenPlaying ? formatDateTime(player.lastSeenPlaying) : 'Never'}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TotalPlaytimeLeaderboard({ players }) {
+  const PAGE_SIZE = 3;
+  const [page, setPage] = useState(1);
+
+  const sorted = useMemo(() => {
+    return [...players].sort((a, b) => b.totalPlaySeconds - a.totalPlaySeconds);
+  }, [players]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagePlayers = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  if (sorted.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+          <Trophy className="h-4 w-4 text-neon-purple" />
+          Total Playtime
+        </div>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              className="grid h-6 w-6 place-items-center rounded border border-neon-cyan/[0.08] text-xs text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              ◀
+            </button>
+            <span className="text-[10px] text-zinc-500">{safePage}/{totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              className="grid h-6 w-6 place-items-center rounded border border-neon-cyan/[0.08] text-xs text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              ▶
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="space-y-2.5">
+        {pagePlayers.map((player, index) => (
+          <TotalPlaytimeCard key={player.id} player={player} rank={(safePage - 1) * PAGE_SIZE + index + 1} />
+        ))}
       </div>
     </div>
   );
@@ -1084,6 +1253,7 @@ export default function App() {
           {/* Right: Sidebar */}
           <div className="hidden w-[340px] shrink-0 space-y-4 xl:block xl:sticky xl:top-16 xl:self-start">
             <Leaderboard players={leaderboard} />
+            <TotalPlaytimeLeaderboard players={livePlayers} />
             <DetailPanel details={liveDetails} onClose={() => setSelectedId(null)} onDelete={deletePlayer} busy={busy} isAdmin={isAdmin} onClubChange={changeClub} />
           </div>
         </div>
