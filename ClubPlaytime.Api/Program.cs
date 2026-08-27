@@ -154,34 +154,43 @@ using (var scope = app.Services.CreateScope())
         dbContext.Database.Migrate();
     }
 
-    // Backfill LastSeenPlaying for players that have no last-seen timestamp yet.
-    // Priority: latest DailyPlaytime date > CreatedAt.
-    var latestDates = await dbContext.DailyPlaytime
-        .Where(d => d.PlaySeconds > 0)
-        .GroupBy(d => d.PlayerId)
-        .Select(g => new { PlayerId = g.Key, MaxDate = g.Max(d => d.Date) })
-        .ToListAsync();
-    var dateLookup = latestDates.ToDictionary(x => x.PlayerId, x => x.MaxDate);
-    var playersToBackfill = await dbContext.Players.Where(p => p.LastSeenPlaying == null).ToListAsync();
-    var backfilled = 0;
-    foreach (var player in playersToBackfill)
+    // Fix inflated playtime: cap daily records to 24h and recalculate totals.
+    const long maxDailySeconds = 86_400;
+    var dailyRows = await dbContext.DailyPlaytime.ToListAsync();
+    var cappedCount = 0;
+    foreach (var row in dailyRows)
     {
-        if (dateLookup.TryGetValue(player.Id, out var latestDate))
+        if (row.PlaySeconds > maxDailySeconds)
         {
-            // Use the latest day they had playtime, end-of-day
-            player.LastSeenPlaying = latestDate.ToDateTime(TimeOnly.MaxValue);
+            row.PlaySeconds = maxDailySeconds;
+            cappedCount++;
         }
-        else
-        {
-            // No playtime records yet, use when they were added
-            player.LastSeenPlaying = player.CreatedAt;
-        }
-        backfilled++;
     }
-    if (backfilled > 0)
+
+    var playerTotals = await dbContext.DailyPlaytime
+        .GroupBy(d => d.PlayerId)
+        .Select(g => new { PlayerId = g.Key, Total = g.Sum(d => d.PlaySeconds) })
+        .ToListAsync();
+    var players = await dbContext.Players.ToListAsync();
+    var recalcCount = 0;
+    foreach (var player in players)
+    {
+        var correctTotal = playerTotals.FirstOrDefault(t => t.PlayerId == player.Id)?.Total ?? 0;
+        if (player.TotalPlaySeconds != correctTotal)
+        {
+            player.TotalPlaySeconds = correctTotal;
+            recalcCount++;
+        }
+    }
+
+    if (cappedCount > 0 || recalcCount > 0)
     {
         await dbContext.SaveChangesAsync();
-        app.Logger.LogInformation("Backfilled LastSeenPlaying for {Count} players", backfilled);
+        app.Logger.LogInformation("Fixed playtime: {Capped} daily records capped, {Recalc} player totals recalculated", cappedCount, recalcCount);
+    }
+    else
+    {
+        app.Logger.LogInformation("No inflated playtime records found.");
     }
 }
 
