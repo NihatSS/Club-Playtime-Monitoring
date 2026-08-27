@@ -75,53 +75,63 @@ public sealed class AdminController(ClubPlaytimeDbContext dbContext) : Controlle
             return BadRequest(new { message = "No daily playtime records provided." });
         }
 
+        // Batch-load all players into memory (map RobloxUserId -> Player)
+        var allPlayers = await dbContext.Players.ToListAsync();
+        var playerByRobloxId = allPlayers.ToDictionary(p => p.RobloxUserId);
+
+        // Batch-load all existing daily playtime into memory
+        var allDailyRows = await dbContext.DailyPlaytime.ToListAsync();
+        var existingByPlayerDate = allDailyRows
+            .GroupBy(d => d.PlayerId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.ToDictionary(d => d.Date, d => d));
+
         var importedCount = 0;
         var skippedCount = 0;
 
         foreach (var record in request.DailyPlaytime)
         {
-            // Find player by RobloxUserId
-            var player = await dbContext.Players.FirstOrDefaultAsync(p => p.RobloxUserId == record.RobloxUserId);
-            if (player is null)
+            if (!playerByRobloxId.TryGetValue(record.RobloxUserId, out var player))
             {
                 skippedCount++;
                 continue;
             }
 
             var date = DateOnly.Parse(record.Date);
-            var existing = await dbContext.DailyPlaytime
-                .FirstOrDefaultAsync(d => d.PlayerId == player.Id && d.Date == date);
 
-            if (existing is null)
+            if (!existingByPlayerDate.TryGetValue(player.Id, out var dateMap))
             {
-                dbContext.DailyPlaytime.Add(new DailyPlaytime
+                dateMap = new Dictionary<DateOnly, DailyPlaytime>();
+                existingByPlayerDate[player.Id] = dateMap;
+            }
+
+            if (!dateMap.TryGetValue(date, out var existing))
+            {
+                var newRow = new DailyPlaytime
                 {
                     PlayerId = player.Id,
                     Date = date,
                     PlaySeconds = record.PlaySeconds
-                });
+                };
+                dbContext.DailyPlaytime.Add(newRow);
+                dateMap[date] = newRow;
                 importedCount++;
             }
             else if (existing.PlaySeconds < record.PlaySeconds)
             {
-                // Keep the higher value (in case of partial data)
                 existing.PlaySeconds = record.PlaySeconds;
                 importedCount++;
             }
         }
 
-        // Recalculate TotalPlaySeconds for all affected players
+        // Recalculate TotalPlaySeconds for affected players from in-memory data
         var affectedRobloxIds = request.DailyPlaytime.Select(r => r.RobloxUserId).Distinct().ToList();
-        var affectedPlayers = await dbContext.Players
-            .Where(p => affectedRobloxIds.Contains(p.RobloxUserId))
-            .ToListAsync();
-
-        foreach (var player in affectedPlayers)
+        foreach (var robloxId in affectedRobloxIds)
         {
-            var total = await dbContext.DailyPlaytime
-                .Where(d => d.PlayerId == player.Id)
-                .SumAsync(d => d.PlaySeconds);
-            player.TotalPlaySeconds = total;
+            if (!playerByRobloxId.TryGetValue(robloxId, out var player)) continue;
+            if (!existingByPlayerDate.TryGetValue(player.Id, out var dateMap)) continue;
+            player.TotalPlaySeconds = dateMap.Values.Sum(d => d.PlaySeconds);
         }
 
         await dbContext.SaveChangesAsync();
@@ -130,7 +140,7 @@ public sealed class AdminController(ClubPlaytimeDbContext dbContext) : Controlle
         {
             imported = importedCount,
             skipped = skippedCount,
-            playersUpdated = affectedPlayers.Count
+            playersUpdated = affectedRobloxIds.Count
         });
     }
 
