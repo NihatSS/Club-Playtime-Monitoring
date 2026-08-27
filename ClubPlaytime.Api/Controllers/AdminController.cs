@@ -12,6 +12,57 @@ namespace ClubPlaytime.Api.Controllers;
 [Authorize(Roles = "Admin")]
 public sealed class AdminController(ClubPlaytimeDbContext dbContext) : ControllerBase
 {
+    /// <summary>
+    /// One-time fix: cap DailyPlaytime to max 24h per day and recalculate TotalPlaySeconds.
+    /// This corrects inflated playtime caused by the LastSeenPlaying bug.
+    /// </summary>
+    [HttpPost("fix-playtime")]
+    public async Task<IActionResult> FixPlaytime()
+    {
+        const long maxDailySeconds = 86_400; // 24 hours
+        var dailyRows = await dbContext.DailyPlaytime.ToListAsync();
+        var cappedCount = 0;
+        var playersAffected = new HashSet<int>();
+
+        foreach (var row in dailyRows)
+        {
+            if (row.PlaySeconds > maxDailySeconds)
+            {
+                row.PlaySeconds = maxDailySeconds;
+                cappedCount++;
+                playersAffected.Add(row.PlayerId);
+            }
+        }
+
+        // Recalculate TotalPlaySeconds for all players from their daily records
+        var playerTotals = await dbContext.DailyPlaytime
+            .GroupBy(d => d.PlayerId)
+            .Select(g => new { PlayerId = g.Key, Total = g.Sum(d => d.PlaySeconds) })
+            .ToListAsync();
+
+        var players = await dbContext.Players.ToListAsync();
+        var recalcCount = 0;
+
+        foreach (var player in players)
+        {
+            var correctTotal = playerTotals.FirstOrDefault(t => t.PlayerId == player.Id)?.Total ?? 0;
+            if (player.TotalPlaySeconds != correctTotal)
+            {
+                player.TotalPlaySeconds = correctTotal;
+                recalcCount++;
+                playersAffected.Add(player.Id);
+            }
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        return Ok(new
+        {
+            dailyRecordsCapped = cappedCount,
+            playersRecalculated = recalcCount,
+            totalPlayersAffected = playersAffected.Count
+        });
+    }
     [HttpGet("users")]
     public async Task<ActionResult<IReadOnlyList<UserDto>>> GetUsers()
     {

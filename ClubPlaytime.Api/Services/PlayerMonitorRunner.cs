@@ -125,7 +125,11 @@ public sealed class PlayerMonitorRunner(
             var elapsedSeconds = 0L;
             if (player.LastSeenPlaying is { } lastSeenPlaying)
             {
-                elapsedSeconds = Math.Max(0, (long)Math.Floor((now - lastSeenPlaying).TotalSeconds));
+                var rawElapsed = (long)Math.Floor((now - lastSeenPlaying).TotalSeconds);
+                // Safety cap: if the gap exceeds 3x the check interval, treat it as a new session.
+                // This prevents stale LastSeenPlaying values from inflating playtime.
+                var maxElapsed = options.CurrentValue.CheckIntervalSeconds * 3L;
+                elapsedSeconds = Math.Clamp(rawElapsed, 0, maxElapsed);
                 if (elapsedSeconds > 0)
                 {
                     var today = await dailyPlaytimeRepository.GetOrCreateAsync(player.Id, utcDate, cancellationToken);
@@ -162,7 +166,9 @@ public sealed class PlayerMonitorRunner(
 
         player.IsOnline = presence.IsOnline;
         player.CurrentlyPlaying = presence.IsOnline ? presence.CurrentGame : null;
-        // Keep LastSeenPlaying intact so "last seen" still shows the last time the player was in the target game
+        // Reset LastSeenPlaying so rejoining the game doesn't count the offline gap as playtime.
+        // "Last seen" info is preserved in PlayerActivityEvent entries (the Stopped event).
+        player.LastSeenPlaying = null;
         player.UpdatedAt = now;
 
         if (wasPlaying)
