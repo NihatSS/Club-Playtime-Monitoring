@@ -155,8 +155,8 @@ using (var scope = app.Services.CreateScope())
         dbContext.Database.Migrate();
     }
 
-    // Seed admin user if it doesn't exist
-    if (!dbContext.Users.Any())
+    // Seed matiaspro admin user if it doesn't exist yet
+    if (!dbContext.Users.Any(u => u.Username == "matiaspro"))
     {
         dbContext.Users.Add(new User
         {
