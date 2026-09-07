@@ -1,6 +1,7 @@
 using System.Text;
 using ClubPlaytime.Api.BackgroundServices;
 using ClubPlaytime.Api.Data;
+using ClubPlaytime.Api.Models;
 using ClubPlaytime.Api.Options;
 using ClubPlaytime.Api.Repositories;
 using ClubPlaytime.Api.Services;
@@ -154,7 +155,18 @@ using (var scope = app.Services.CreateScope())
         dbContext.Database.Migrate();
     }
 
-
+    // Seed admin user if it doesn't exist
+    if (!dbContext.Users.Any())
+    {
+        dbContext.Users.Add(new User
+        {
+            Username = "matiaspro",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Playtimetracker123_"),
+            Role = "Admin",
+            CreatedAt = DateTime.UtcNow
+        });
+        dbContext.SaveChanges();
+    }
 }
 
 app.UseHttpsRedirection();
