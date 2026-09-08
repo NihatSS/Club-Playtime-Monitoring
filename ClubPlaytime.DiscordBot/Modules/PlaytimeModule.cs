@@ -38,36 +38,45 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
 
         PlayerDetailsDto? player = null;
 
-        if (!string.IsNullOrWhiteSpace(playerName))
+        try
         {
-            _logger.LogInformation("Looking up player by name: {Name}", playerName);
-            var allPlayers = await _api.GetPlayersAsync();
-            _logger.LogInformation("GetPlayersAsync returned {Count} players", allPlayers?.Count ?? 0);
-
-            var matched = allPlayers?.FirstOrDefault(p =>
-                p.Username.Equals(playerName, StringComparison.OrdinalIgnoreCase));
-            if (matched is not null)
+            if (!string.IsNullOrWhiteSpace(playerName))
             {
-                _logger.LogInformation("Found player by name: {Id} {Username}", matched.Id, matched.Username);
-                player = await _api.GetPlayerDetailsAsync(matched.Id);
+                _logger.LogInformation("Looking up player by name: {Name}", playerName);
+                var allPlayers = await _api.GetPlayersAsync();
+                _logger.LogInformation("GetPlayersAsync returned {Count} players", allPlayers?.Count ?? 0);
+
+                var matched = allPlayers?.FirstOrDefault(p =>
+                    p.Username.Equals(playerName, StringComparison.OrdinalIgnoreCase));
+                if (matched is not null)
+                {
+                    _logger.LogInformation("Found player by name: {Id} {Username}", matched.Id, matched.Username);
+                    player = await _api.GetPlayerDetailsAsync(matched.Id);
+                }
+                else
+                {
+                    _logger.LogWarning("No player matched the name '{Name}' in {Count} total players",
+                        playerName, allPlayers?.Count ?? 0);
+                    if (allPlayers is not null && allPlayers.Count > 0)
+                    {
+                        var names = string.Join(", ", allPlayers.Take(10).Select(p => p.Username));
+                        _logger.LogWarning("First {Count} player names in DB: {Names}",
+                            Math.Min(10, allPlayers.Count), names);
+                    }
+                }
             }
             else
             {
-                _logger.LogWarning("No player matched the name '{Name}' in {Count} total players",
-                    playerName, allPlayers?.Count ?? 0);
-                if (allPlayers is not null && allPlayers.Count > 0)
-                {
-                    var names = string.Join(", ", allPlayers.Take(10).Select(p => p.Username));
-                    _logger.LogWarning("First {Count} player names in DB: {Names}",
-                        Math.Min(10, allPlayers.Count), names);
-                }
+                var discordId = Context.User.Id.ToString();
+                _logger.LogInformation("Looking up player by Discord ID: {DiscordId}", discordId);
+                player = await _api.GetPlayerByDiscordUserIdAsync(discordId);
             }
         }
-        else
+        catch (ApiUnavailableException ex)
         {
-            var discordId = Context.User.Id.ToString();
-            _logger.LogInformation("Looking up player by Discord ID: {DiscordId}", discordId);
-            player = await _api.GetPlayerByDiscordUserIdAsync(discordId);
+            _logger.LogError(ex, "Playtime API unreachable while handling /playtime");
+            await FollowupAsync(embed: ApiUnavailableEmbed());
+            return;
         }
 
         if (player is null)
@@ -93,8 +102,9 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
     {
         await DeferAsync();
 
-        var leaderboard = await _api.GetLeaderboardAsync(period);
-        if (leaderboard is null || leaderboard.Count == 0)
+        var leaderboard = await FetchLeaderboardOrErrorAsync(period);
+        if (leaderboard is null) return;
+        if (leaderboard.Count == 0)
         {
             var eb = new EmbedBuilder()
                 .WithColor(BrandOrange)
@@ -125,8 +135,9 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
     {
         await DeferAsync();
 
-        var leaderboard = await _api.GetLeaderboardAsync(period);
-        if (leaderboard is null || leaderboard.Count == 0)
+        var leaderboard = await FetchLeaderboardOrErrorAsync(period, ephemeralError: true);
+        if (leaderboard is null) return;
+        if (leaderboard.Count == 0)
         {
             await FollowupAsync("No playtime data available for this period.", ephemeral: true);
             return;
@@ -159,8 +170,9 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
     {
         await DeferAsync();
 
-        var leaderboard = await _api.GetLeaderboardAsync(period);
-        if (leaderboard is null || leaderboard.Count == 0)
+        var leaderboard = await FetchLeaderboardOrErrorAsync(period, ephemeralError: true);
+        if (leaderboard is null) return;
+        if (leaderboard.Count == 0)
         {
             await FollowupAsync("No playtime data available for this period.", ephemeral: true);
             return;
@@ -201,8 +213,9 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
     {
         await DeferAsync();
 
-        var leaderboard = await _api.GetLeaderboardAsync(period);
-        if (leaderboard is null || leaderboard.Count == 0)
+        var leaderboard = await FetchLeaderboardOrErrorAsync(period, ephemeralError: true);
+        if (leaderboard is null) return;
+        if (leaderboard.Count == 0)
         {
             await FollowupAsync("No playtime data available for this period.", ephemeral: true);
             return;
@@ -225,8 +238,9 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
 
     private async Task<List<LeaderboardPlayerDto>?> FetchAndUpdateLeaderboardAsync(string period, int page)
     {
-        var leaderboard = await _api.GetLeaderboardAsync(period);
-        if (leaderboard is null || leaderboard.Count == 0)
+        var leaderboard = await FetchLeaderboardOrErrorAsync(period, ephemeralError: true);
+        if (leaderboard is null) return null;
+        if (leaderboard.Count == 0)
         {
             await FollowupAsync("No playtime data available for this period.", ephemeral: true);
             return null;
@@ -248,8 +262,18 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
     /// <summary>Returns the current user's rank and display name on the given leaderboard, or null if unranked.</summary>
     private async Task<(int Rank, string Username)?> GetCurrentUserRankAsync(List<LeaderboardPlayerDto> leaderboard)
     {
-        var discordId = Context.User.Id.ToString();
-        var currentPlayer = await _api.GetPlayerByDiscordUserIdAsync(discordId);
+        PlayerDetailsDto? currentPlayer;
+        try
+        {
+            var discordId = Context.User.Id.ToString();
+            currentPlayer = await _api.GetPlayerByDiscordUserIdAsync(discordId);
+        }
+        catch (ApiUnavailableException ex)
+        {
+            _logger.LogWarning(ex, "Could not look up the current user's rank (API unreachable).");
+            return null;
+        }
+
         if (currentPlayer is null)
             return null;
 
@@ -436,6 +460,40 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
             .WithFooter(new EmbedFooterBuilder { Text = "Club Playtime" })
             .WithCurrentTimestamp()
             .Build();
+    }
+
+    private Embed ApiUnavailableEmbed()
+    {
+        return new EmbedBuilder()
+            .WithColor(BrandRed)
+            .WithAuthor(new EmbedAuthorBuilder
+            {
+                Name = "⚠️ Tracker Unavailable",
+                IconUrl = Context.Client.CurrentUser.GetAvatarUrl()
+            })
+            .WithDescription("The playtime tracker API couldn't be reached right now. Please try again in a few minutes.")
+            .WithFooter(new EmbedFooterBuilder { Text = "Club Playtime" })
+            .WithCurrentTimestamp()
+            .Build();
+    }
+
+    /// <summary>
+    /// Fetches a leaderboard, responding with an error if the API is unreachable.
+    /// Returns null when the API failed (an error response has already been sent)
+    /// or when there is no data.
+    /// </summary>
+    private async Task<List<LeaderboardPlayerDto>?> FetchLeaderboardOrErrorAsync(string period, bool ephemeralError = false)
+    {
+        try
+        {
+            return await _api.GetLeaderboardAsync(period);
+        }
+        catch (ApiUnavailableException ex)
+        {
+            _logger.LogError(ex, "Playtime API unreachable while fetching leaderboard for period '{Period}'.", period);
+            await FollowupAsync(embed: ApiUnavailableEmbed(), ephemeral: ephemeralError);
+            return null;
+        }
     }
 
     internal static string FormatDuration(long totalSeconds)

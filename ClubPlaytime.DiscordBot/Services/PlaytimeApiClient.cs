@@ -12,57 +12,59 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
 
     public async Task<List<PlayerDto>?> GetPlayersAsync(CancellationToken cancellationToken = default)
     {
-        try
-        {
-            return await httpClient.GetFromJsonAsync<List<PlayerDto>>("players", cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to fetch players from {BaseUrl}players", httpClient.BaseAddress);
-            return null;
-        }
+        return await GetAsync<List<PlayerDto>>("players", cancellationToken);
     }
 
     public async Task<PlayerDetailsDto?> GetPlayerDetailsAsync(int playerId, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            return await httpClient.GetFromJsonAsync<PlayerDetailsDto>($"players/{playerId}", cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to fetch player details for {PlayerId}.", playerId);
-            return null;
-        }
+        return await GetAsync<PlayerDetailsDto>($"players/{playerId}", cancellationToken);
     }
 
     public async Task<PlayerDetailsDto?> GetPlayerByDiscordUserIdAsync(string discordUserId, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            return await httpClient.GetFromJsonAsync<PlayerDetailsDto>($"players/by-discord/{discordUserId}", cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to fetch player by Discord ID {DiscordId}.", discordUserId);
-            return null;
-        }
+        return await GetAsync<PlayerDetailsDto>($"players/by-discord/{discordUserId}", cancellationToken);
     }
 
     public async Task<List<LeaderboardPlayerDto>?> GetLeaderboardAsync(string period, CancellationToken cancellationToken = default)
     {
+        return await GetAsync<List<LeaderboardPlayerDto>>(
+            $"dashboard/leaderboard?period={period}", cancellationToken);
+    }
+
+    /// <summary>
+    /// GETs a JSON resource from the API. Returns null when the API answers 404 (resource
+    /// genuinely not found), and throws <see cref="ApiUnavailableException"/> when the API
+    /// cannot be reached or answers with an error, so callers can distinguish a real
+    /// "not found" from an outage instead of showing a misleading message.
+    /// </summary>
+    private async Task<T?> GetAsync<T>(string path, CancellationToken cancellationToken) where T : class
+    {
         try
         {
-            return await httpClient.GetFromJsonAsync<List<LeaderboardPlayerDto>>(
-                $"dashboard/leaderboard?period={period}", cancellationToken);
+            return await httpClient.GetFromJsonAsync<T>(path, cancellationToken);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to fetch leaderboard for period '{Period}'.", period);
-            return null;
+            if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            logger.LogWarning(ex, "Failed to fetch {Path} from {BaseUrl}", path, httpClient.BaseAddress);
+            throw new ApiUnavailableException($"The playtime tracker API at {httpClient.BaseAddress} could not be reached.", ex);
         }
     }
 }
+
+/// <summary>
+/// Thrown when the ClubPlaytime API cannot be reached (connection failure, timeout,
+/// or a non-404 error response), as opposed to a genuine 404 "not found".
+/// </summary>
+public sealed class ApiUnavailableException(string message, Exception innerException) : Exception(message, innerException);
 
 public sealed class PlayerDto
 {
