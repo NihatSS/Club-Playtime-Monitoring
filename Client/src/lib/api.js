@@ -131,6 +131,8 @@ export const api = {
 
   // Join requests (public)
   submitJoinRequest: (body) => request('/api/joinrequest', { method: 'POST', body: JSON.stringify(body) }),
+  getMyJoinRequest: (robloxUserId) => request(`/api/joinrequest/mine?robloxUserId=${encodeURIComponent(robloxUserId)}`),
+  updateJoinRequest: (id, body) => request(`/api/joinrequest/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
 
   // Join requests (admin)
   getJoinRequests: (status) => request(`/api/joinrequest${status ? `?status=${status}` : ''}`),

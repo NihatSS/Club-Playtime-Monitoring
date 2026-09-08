@@ -841,6 +841,7 @@ export default function App() {
   });
   const [showLogin, setShowLogin] = useState(false);
   const [showRequestForm, setShowRequestForm] = useState(false);
+  const [myJoinRequest, setMyJoinRequest] = useState(null);
 
   useEffect(() => {
     setOnAuthExpired(() => { setUser(null); setShowLogin(false); });
@@ -997,9 +998,35 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             {!isAdmin && (
-              <button type="button" onClick={() => setShowRequestForm(!showRequestForm)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-neon-green/30 bg-neon-green/10 px-3 text-sm font-medium text-neon-green transition hover:bg-neon-green/20">
-                <UserPlus className="h-4 w-4" />
-                Request to Join
+              <button
+                type="button"
+                onClick={() => setShowRequestForm(!showRequestForm)}
+                className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition ${
+                  myJoinRequest?.status === 'Approved'
+                    ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20'
+                    : myJoinRequest?.status === 'Rejected'
+                      ? 'border-red-400/30 bg-red-400/10 text-red-300 hover:bg-red-400/20'
+                      : myJoinRequest
+                        ? 'border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+                        : 'border-neon-green/30 bg-neon-green/10 text-neon-green hover:bg-neon-green/20'
+                }`}
+              >
+                {myJoinRequest?.status === 'Approved' ? (
+                  <CheckCircle className="h-4 w-4" />
+                ) : myJoinRequest?.status === 'Rejected' ? (
+                  <XCircle className="h-4 w-4" />
+                ) : myJoinRequest ? (
+                  <Clock className="h-4 w-4" />
+                ) : (
+                  <UserPlus className="h-4 w-4" />
+                )}
+                {myJoinRequest?.status === 'Approved'
+                  ? 'Request Accepted'
+                  : myJoinRequest?.status === 'Rejected'
+                    ? 'Request Declined'
+                    : myJoinRequest
+                      ? 'Request Pending'
+                      : 'Request to Join'}
               </button>
             )}
 
@@ -1040,7 +1067,10 @@ export default function App() {
 
       {showRequestForm && (
         <div className="mx-auto max-w-[1400px] px-5 pt-4">
-          <RequestJoinForm onClose={() => setShowRequestForm(false)} />
+          <RequestJoinForm
+            onClose={() => setShowRequestForm(false)}
+            onMyRequestChange={setMyJoinRequest}
+          />
         </div>
       )}
 

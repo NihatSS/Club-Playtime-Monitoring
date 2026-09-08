@@ -20,6 +20,24 @@ public sealed class SubmitJoinRequest
     public string? Note { get; set; }
 }
 
+public sealed class UpdateJoinRequest
+{
+    [Required, MaxLength(100)]
+    public string RobloxUsername { get; set; } = string.Empty;
+
+    [Required]
+    public long RobloxUserId { get; set; }
+
+    [Required, MaxLength(100)]
+    public string DiscordUserId { get; set; } = string.Empty;
+
+    [Required]
+    public string Club { get; set; } = "PIH";
+
+    [MaxLength(500)]
+    public string? Note { get; set; }
+}
+
 public sealed class JoinRequestDto
 {
     public int Id { get; set; }
@@ -32,6 +50,11 @@ public sealed class JoinRequestDto
     public DateTime CreatedAt { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public string? ReviewedBy { get; set; }
+}
+
+public sealed class JoinRequestExistsDto
+{
+    public bool Exists { get; set; }
 }
 
 public sealed class ReviewJoinRequest
