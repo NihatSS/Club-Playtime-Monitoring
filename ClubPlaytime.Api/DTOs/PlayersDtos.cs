@@ -10,7 +10,7 @@ public sealed class AddPlayerRequest
     [Range(1, long.MaxValue)]
     public long RobloxUserId { get; set; }
 
-    [Required, MaxLength(10)]
+    [MaxLength(100)]
     public string Club { get; set; } = "PIH";
 
     [MaxLength(100)]
@@ -235,7 +235,7 @@ public sealed class LinkDiscordRequest
 
 public sealed class UpdateClubRequest
 {
-    [Required, MaxLength(10)]
+    [MaxLength(100)]
     public string Club { get; set; } = string.Empty;
 }
 

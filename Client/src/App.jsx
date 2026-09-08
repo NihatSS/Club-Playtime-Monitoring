@@ -72,9 +72,10 @@ function clubBadgeClass(club) {
 }
 
 function clubLabel(club) {
+  if (!club) return 'None';
   if (club === 'PIH') return 'PIH';
   if (club === 'P1H') return 'P1H';
-  return 'None';
+  return club;
 }
 
 function CopyIdButton({ id }) {
@@ -137,18 +138,19 @@ function Avatar({ player, size = 'md' }) {
 }
 
 // ─── Join Requests Dropdown ──────────────────────────────────
-function JoinRequestsDropdown() {
+function JoinRequestsDropdown({ onApproved }) {
   const [open, setOpen] = useState(false);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const ref = useRef(null);
 
   const pendingCount = requests.filter((r) => r.status === 'Pending').length;
 
   const loadRequests = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+    if (!silent) { setLoading(true); setSuccess(''); }
     try {
       const data = await api.getJoinRequests('Pending');
       setRequests(data);
@@ -174,6 +176,24 @@ function JoinRequestsDropdown() {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
+
+  async function handleReview(id, status) {
+    setBusy(true);
+    try {
+      await api.reviewJoinRequest(id, status);
+      if (status === 'Approved') {
+        setSuccess('Player added to the tracker.');
+        onApproved?.();
+      } else {
+        setSuccess('Request declined.');
+      }
+      await loadRequests(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleDelete(id) {
     setBusy(true);
@@ -219,6 +239,11 @@ function JoinRequestsDropdown() {
           {error && (
             <div className="border-b border-neon-cyan/[0.08] bg-red-400/10 px-4 py-2 text-xs text-red-100">
               {error}
+            </div>
+          )}
+          {success && (
+            <div className="border-b border-neon-cyan/[0.08] bg-emerald-400/10 px-4 py-2 text-xs text-emerald-100">
+              {success}
             </div>
           )}
 
@@ -273,6 +298,24 @@ function JoinRequestsDropdown() {
                         <ExternalLink className="h-3 w-3" />
                         Profile
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => handleReview(req.id, 'Approved')}
+                        disabled={busy}
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-400/20 disabled:opacity-50"
+                      >
+                        <CheckCircle className="h-3 w-3" />
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReview(req.id, 'Rejected')}
+                        disabled={busy}
+                        className="inline-flex items-center gap-1 rounded-md border border-red-400/30 bg-red-400/10 px-2 py-1 text-[11px] font-semibold text-red-200 transition hover:bg-red-400/20 disabled:opacity-50"
+                      >
+                        <XCircle className="h-3 w-3" />
+                        Decline
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(req.id)}
@@ -507,7 +550,7 @@ function AddPlayerForm({ onAdd, busy }) {
           placeholder="Enter custom club name"
           className="min-h-10 w-full rounded-lg border border-neon-cyan/[0.08] bg-ink px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
           required
-          maxLength={10}
+          maxLength={100}
         />
       )}
     </form>
@@ -517,10 +560,11 @@ function AddPlayerForm({ onAdd, busy }) {
 // ─── Sidebar: Detail Panel ───────────────────────────────────
 function DetailPanel({ details, onClose, onDelete, busy, isAdmin, onClubChange }) {
   const [editingClub, setEditingClub] = useState(false);
+  const [clubSelect, setClubSelect] = useState('PIH');
   const [newClub, setNewClub] = useState('');
 
   function handleClubSave() {
-    onClubChange?.(details.id, newClub);
+    onClubChange?.(details.id, clubSelect === 'custom' ? newClub.trim() : clubSelect);
     setEditingClub(false);
   }
 
@@ -554,7 +598,7 @@ function DetailPanel({ details, onClose, onDelete, busy, isAdmin, onClubChange }
                 {clubLabel(details.club)}
               </span>
               {isAdmin && !editingClub && (
-                <button type="button" onClick={() => { setEditingClub(true); setNewClub(details.club || ''); }} className="inline-flex h-5 w-5 items-center justify-center rounded border border-neon-cyan/[0.12] text-zinc-500 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-200" title="Edit club">
+                <button type="button" onClick={() => { setEditingClub(true); if (details.club === 'PIH' || details.club === 'P1H' || !details.club) { setClubSelect(details.club || ''); setNewClub(''); } else { setClubSelect('custom'); setNewClub(details.club); } }} className="inline-flex h-5 w-5 items-center justify-center rounded border border-neon-cyan/[0.12] text-zinc-500 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-200" title="Edit club">
                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
                 </button>
               )}
@@ -587,14 +631,24 @@ function DetailPanel({ details, onClose, onDelete, busy, isAdmin, onClubChange }
       {isAdmin && editingClub && (
         <div className="flex items-center gap-2 rounded-lg border border-neon-cyan/[0.12] bg-ink p-2">
           <select
-            value={newClub}
-            onChange={(e) => setNewClub(e.target.value)}
+            value={clubSelect}
+            onChange={(e) => { const v = e.target.value; setClubSelect(v); if (v !== 'custom') setNewClub(v); }}
             className="h-8 flex-1 rounded-md border border-neon-cyan/[0.15] bg-panel px-2 text-xs text-zinc-200 focus:border-neon-cyan/30 transition"
           >
             <option value="PIH">PIH</option>
             <option value="P1H">P1H</option>
+            <option value="custom">Custom</option>
             <option value="">None</option>
           </select>
+          {clubSelect === 'custom' && (
+            <input
+              value={newClub}
+              onChange={(e) => setNewClub(e.target.value)}
+              placeholder="Custom club name"
+              className="h-8 w-32 rounded-md border border-neon-cyan/[0.15] bg-panel px-2 text-xs text-zinc-200 placeholder:text-zinc-500 focus:border-neon-cyan/30 transition"
+              maxLength={100}
+            />
+          )}
           <button type="button" onClick={handleClubSave} disabled={busy} className="h-8 rounded-md bg-neon-cyan px-3 text-[11px] font-semibold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-50">Save</button>
           <button type="button" onClick={() => setEditingClub(false)} className="h-8 rounded-md border border-neon-cyan/[0.12] px-3 text-[11px] font-medium text-zinc-400 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-200">Cancel</button>
         </div>
@@ -949,7 +1003,7 @@ export default function App() {
               </button>
             )}
 
-            {isAdmin && <JoinRequestsDropdown />}
+            {isAdmin && <JoinRequestsDropdown onApproved={() => { loadDashboard(true); if (selectedId) loadDetails(selectedId); }} />}
 
             <button type="button" onClick={() => api.downloadCsv()} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]">
               <Download className="h-4 w-4" />

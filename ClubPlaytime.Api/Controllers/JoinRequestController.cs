@@ -1,6 +1,7 @@
 using ClubPlaytime.Api.Data;
 using ClubPlaytime.Api.DTOs;
 using ClubPlaytime.Api.Models;
+using ClubPlaytime.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,7 @@ namespace ClubPlaytime.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext) : ControllerBase
+public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlayerStatsService playerStatsService) : ControllerBase
 {
     /// <summary>
     /// Public: Submit a request to be added to the tracker.
@@ -125,9 +126,44 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext) : Con
         joinRequest.ReviewedAt = DateTime.UtcNow;
         joinRequest.ReviewedBy = User.Identity?.Name;
 
+        var message = $"Request {review.Status.ToLower()}.";
+
+        // Approving a request automatically adds the player to the tracker
+        if (review.Status == "Approved")
+        {
+            var alreadyTracked = await dbContext.Players
+                .AnyAsync(p => p.RobloxUserId == joinRequest.RobloxUserId);
+
+            if (alreadyTracked)
+            {
+                message = "Request approved, but this player was already in the tracker.";
+            }
+            else
+            {
+                try
+                {
+                    await playerStatsService.AddPlayerAsync(new AddPlayerRequest
+                    {
+                        Username = joinRequest.RobloxUsername.Trim(),
+                        RobloxUserId = joinRequest.RobloxUserId,
+                        Club = string.IsNullOrWhiteSpace(joinRequest.Club) || joinRequest.Club.Trim().Equals("None", StringComparison.OrdinalIgnoreCase)
+                            ? string.Empty
+                            : joinRequest.Club.Trim(),
+                        DiscordUserId = string.IsNullOrWhiteSpace(joinRequest.DiscordUserId)
+                            ? null
+                            : joinRequest.DiscordUserId.Trim()
+                    });
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Conflict(new { message = ex.Message });
+                }
+            }
+        }
+
         await dbContext.SaveChangesAsync();
 
-        return Ok(new { message = $"Request {review.Status.ToLower()}." });
+        return Ok(new { message });
     }
 
     /// <summary>
