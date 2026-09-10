@@ -12,8 +12,10 @@ namespace ClubPlaytime.Api.Controllers;
 public sealed class PlayersController(
     IPlayerStatsService playerStatsService,
     ClubPlaytimeDbContext dbContext,
-    ILogger<PlayersController> logger) : ControllerBase
+    ILogger<PlayersController> logger,
+    IConfiguration configuration) : ControllerBase
 {
+    private readonly IConfiguration _configuration = configuration;
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PlayerDto>>> GetPlayers(CancellationToken cancellationToken)
     {
@@ -165,6 +167,38 @@ public sealed class PlayersController(
         var result = await playerStatsService.SyncDiscordIdsAsync(request.Mappings, cancellationToken);
         logger.LogInformation(
             "Discord ID sync completed: {Synced} synced, {Skipped} skipped, {Conflicts} conflicts, {Failed} failed",
+            result.Synced.Count, result.Skipped.Count, result.Conflicts.Count, result.Failed.Count);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// One-time seed endpoint to populate Discord IDs without requiring an existing
+    /// admin account. Uses a secret key for authorization. Remove this endpoint after
+    /// the initial sync is complete.
+    /// </summary>
+    [HttpPost("seed-discord-ids")]
+    public async Task<ActionResult<SyncResult>> SeedDiscordIds(
+        [FromBody] SyncDiscordIdsRequest request,
+        [FromQuery] string secretKey,
+        CancellationToken cancellationToken)
+    {
+        // Check the secret key from configuration
+        var configuredSecret = _configuration["DiscordSync:SecretKey"];
+        if (string.IsNullOrWhiteSpace(configuredSecret) || secretKey != configuredSecret)
+        {
+            logger.LogWarning("Invalid secret key attempted for Discord ID seed operation");
+            return Unauthorized(new { message = "Invalid secret key." });
+        }
+
+        if (request.Mappings is null || request.Mappings.Count == 0)
+        {
+            return BadRequest(new { message = "No mappings provided." });
+        }
+
+        logger.LogInformation("Discord ID seed operation requested with {Count} mappings", request.Mappings.Count);
+        var result = await playerStatsService.SyncDiscordIdsAsync(request.Mappings, cancellationToken);
+        logger.LogInformation(
+            "Discord ID seed completed: {Synced} synced, {Skipped} skipped, {Conflicts} conflicts, {Failed} failed",
             result.Synced.Count, result.Skipped.Count, result.Conflicts.Count, result.Failed.Count);
         return Ok(result);
     }
