@@ -47,6 +47,12 @@ builder.Logging.AddDebug();
 var app = builder.Build();
 
 app.MapGet("/", () => "Discord bot is running.");
-app.MapGet("/health", () => Results.Ok());
+
+// Health reflects the actual Discord gateway state, not just the HTTP server.
+// A 503 tells Railway (or any monitor) the bot is NOT actually available, and with
+// a restart policy / health-check-based restart this recovers dead connections.
+app.MapGet("/health", (DiscordBotService bot) => bot.IsGatewayHealthy
+    ? Results.Ok(new { status = "healthy", bot = bot.BotUsername, latencyMs = bot.GatewayLatencyMs })
+    : Results.Json(new { status = "unhealthy", bot = bot.BotUsername }, statusCode: 503));
 
 app.Run();
