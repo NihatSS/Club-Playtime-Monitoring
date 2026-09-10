@@ -26,12 +26,13 @@ builder.Services.AddHttpClient<PlaytimeApiClient>(client =>
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     client.Timeout = TimeSpan.FromSeconds(20);
 
-    // Read the API base URL from configuration
-    var config = builder.Configuration["Api:BaseUrl"];
-    if (!string.IsNullOrWhiteSpace(config))
+    // The API routes are rooted at /api. An environment override that provides
+    // only the site origin must not silently turn lookups into /players/... 404s.
+    var configuredBaseUrl = builder.Configuration["Api:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
     {
-        var baseUrl = config.TrimEnd('/') + "/";
-        client.BaseAddress = new Uri(baseUrl);
+        var configuredUri = new Uri(configuredBaseUrl.Trim(), UriKind.Absolute);
+        client.BaseAddress = new Uri(configuredUri.GetLeftPart(UriPartial.Authority) + "/api/");
     }
 });
 

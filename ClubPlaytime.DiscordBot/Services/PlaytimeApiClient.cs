@@ -63,6 +63,7 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 // Genuine "not found" — never retry, return null so callers show "not in tracker".
+                logger.LogInformation("Tracker API returned 404 for {BaseUrl}{Path}", httpClient.BaseAddress, path);
                 return null;
             }
             catch (Exception ex)
@@ -157,5 +158,4 @@ public sealed class LeaderboardPlayerDto
     [JsonPropertyName("totalPlaySeconds")] public long TotalPlaySeconds { get; set; }
     [JsonPropertyName("discordUserId")] public string? DiscordUserId { get; set; }
 }
-
 

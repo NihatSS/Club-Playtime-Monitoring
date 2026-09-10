@@ -239,6 +239,38 @@ static void ApplyPostgresAccountLinkSchema(ClubPlaytimeDbContext dbContext)
             END IF;
         END $$;
         """);
+
+    // The original PostgreSQL bootstrap used `timestamp without time zone`,
+    // while this app writes UTC DateTimes. Npgsql rejects that mismatch when a
+    // claim creates its website account. Treat existing timestamp values as UTC
+    // and convert only columns that still use the legacy type.
+    dbContext.Database.ExecuteSqlRaw("""
+        DO $$
+        DECLARE item record;
+        BEGIN
+            FOR item IN
+                SELECT * FROM (VALUES
+                    ('Players', 'LastSeenPlaying'), ('Players', 'CreatedAt'), ('Players', 'UpdatedAt'),
+                    ('PlayerActivityEvents', 'OccurredAt'), ('Users', 'CreatedAt'),
+                    ('VerificationCodes', 'CreatedAt'), ('VerificationCodes', 'ExpiresAt'),
+                    ('VerificationCodes', 'UsedAt'), ('VerificationCodes', 'ClaimedAt'),
+                    ('JoinRequests', 'CreatedAt'), ('JoinRequests', 'ReviewedAt')
+                ) AS columns_to_convert(table_name, column_name)
+            LOOP
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = item.table_name
+                      AND column_name = item.column_name
+                      AND data_type = 'timestamp without time zone'
+                ) THEN
+                    EXECUTE format(
+                        'ALTER TABLE %I ALTER COLUMN %I TYPE timestamp with time zone USING %I AT TIME ZONE ''UTC''',
+                        item.table_name, item.column_name, item.column_name);
+                END IF;
+            END LOOP;
+        END $$;
+        """);
 }
 
 app.UseHttpsRedirection();

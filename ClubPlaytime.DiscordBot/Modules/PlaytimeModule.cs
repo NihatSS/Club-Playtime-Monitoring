@@ -88,7 +88,10 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
             else
             {
                 var discordId = Context.User.Id.ToString();
-                _logger.LogInformation("Looking up player by Discord ID: {DiscordId}", discordId);
+                _logger.LogInformation(
+                    "Looking up player by Discord ID: {DiscordId} using tracker API {ApiBaseUrl}",
+                    discordId,
+                    _api.EffectiveBaseUrl);
                 player = await _api.GetPlayerByDiscordUserIdAsync(discordId);
             }
         }

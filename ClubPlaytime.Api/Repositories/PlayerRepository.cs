@@ -51,18 +51,38 @@ public sealed class PlayerRepository(ClubPlaytimeDbContext dbContext) : IPlayerR
 
     private async Task<Player?> GetByDiscordUserIdCoreAsync(string discordUserId, CancellationToken cancellationToken)
     {
+        // Some historical admin links were saved as Discord mentions. New links
+        // are canonical bare snowflakes, but both forms identify the same user.
+        var candidates = new[] { discordUserId, $"<@{discordUserId}>", $"<@!{discordUserId}>" };
         var player = await dbContext.Players
-            .FirstOrDefaultAsync(p => p.DiscordUserId == discordUserId, cancellationToken);
+            .FirstOrDefaultAsync(p => p.DiscordUserId != null && candidates.Contains(p.DiscordUserId.Trim()), cancellationToken);
 
         if (player is not null)
         {
             return player;
         }
 
-        return await dbContext.Users
-            .Where(u => u.DiscordUserId == discordUserId && u.PlayerId != null)
+        player = await dbContext.Users
+            .Where(u => u.DiscordUserId != null && candidates.Contains(u.DiscordUserId.Trim()) && u.PlayerId != null)
             .Select(u => u.Player)
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (player is not null)
+        {
+            return player;
+        }
+
+        // Approved join requests are a verified Discord-to-Roblox link from
+        // before User.PlayerId existed. Resolve them without changing data.
+        var robloxUserId = await dbContext.JoinRequests
+            .Where(r => r.Status == "Approved" && candidates.Contains(r.DiscordUserId.Trim()))
+            .OrderByDescending(r => r.ReviewedAt)
+            .Select(r => (long?)r.RobloxUserId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return robloxUserId is null
+            ? null
+            : await dbContext.Players.FirstOrDefaultAsync(p => p.RobloxUserId == robloxUserId.Value, cancellationToken);
     }
 
     public async Task<Player?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
