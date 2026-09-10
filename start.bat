@@ -36,7 +36,7 @@ echo.
 :: Step 1: Start the Backend API
 :: =========================================
 echo [2/4] Starting Backend API on http://localhost:5121...
-start "ClubPlaytime-API" cmd /c "cd /d "%~dp0ClubPlaytime.Api" && dotnet run --no-launch-profile --urls "http://localhost:5121" || pause"
+start "ClubPlaytime-API" cmd /c "cd /d "%~dp0ClubPlaytime.Api" && set ASPNETCORE_ENVIRONMENT=Development && dotnet run --no-launch-profile --urls "http://localhost:5121" || pause"
 echo       Waiting for backend...
 timeout /t 6 /nobreak >nul
 

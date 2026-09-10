@@ -9,6 +9,7 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
 {
     private readonly PlaytimeApiClient _api;
     private readonly ILogger<PlaytimeModule> _logger;
+    private readonly IConfiguration _configuration;
 
     // Leadboard color palette
     private static readonly Color BrandPurple = new(0x9B59B6);
@@ -23,10 +24,29 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
 
     private const int PageSize = 10;
 
-    public PlaytimeModule(PlaytimeApiClient api, ILogger<PlaytimeModule> logger)
+    public PlaytimeModule(PlaytimeApiClient api, ILogger<PlaytimeModule> logger, IConfiguration configuration)
     {
         _api = api;
         _logger = logger;
+        _configuration = configuration;
+    }
+
+    /// <summary>
+    /// Origin of the tracker website (e.g. https://rrplaytimetracker.online), derived from
+    /// the configured API base URL so the messages always point at the right site.
+    /// </summary>
+    private string SiteUrl
+    {
+        get
+        {
+            var apiBaseUrl = _configuration["Api:BaseUrl"];
+            if (Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var uri))
+            {
+                return uri.GetLeftPart(UriPartial.Authority);
+            }
+
+            return "https://rrplaytimetracker.online";
+        }
     }
 
     [SlashCommand("playtime", "View playtime stats for a player")]
@@ -437,9 +457,11 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
                 Name = "❌ Player Not Found",
                 IconUrl = Context.Client.CurrentUser.GetAvatarUrl()
             })
-            .WithDescription($"Could not find **{playerName}** in the database.")
+            .WithDescription($"Could not find **{playerName}** in the tracker database.")
             .AddField("Not in the tracker?",
-                      "Go to **RRPlaytimeBot** on Roblox, then create a ticket saying you've done it.")
+                      $"Create an account at **{SiteUrl}**, add your Roblox username and Discord ID, then **Request to Join**. An admin will review your request.")
+            .AddField("Already in the tracker?",
+                      "Ask an admin to link your Discord ID to your tracker profile (they can do it on the website).")
             .WithFooter(new EmbedFooterBuilder { Text = "Club Playtime" })
             .WithCurrentTimestamp()
             .Build();
@@ -451,12 +473,14 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
             .WithColor(BrandOrange)
             .WithAuthor(new EmbedAuthorBuilder
             {
-                Name = "⚠️ Not In Tracker",
+                Name = "⚠️ Not Linked",
                 IconUrl = Context.Client.CurrentUser.GetAvatarUrl()
             })
-            .WithDescription("You're not in the tracker yet.")
-            .AddField("How to get added",
-                      "Go to **RRPlaytimeBot** on Roblox, then create a ticket saying you've done it.")
+            .WithDescription("I couldn't find a tracker profile linked to your Discord account.")
+            .AddField("Already in the tracker?",
+                      $"Your tracker profile exists but isn't linked to this Discord account yet. Ask an admin to link your Discord ID on the website, or claim your existing profile from the **{SiteUrl}** account page.")
+            .AddField("Not in the tracker yet?",
+                      $"Create an account at **{SiteUrl}**, add your Roblox username and Discord ID, then **Request to Join**. An admin will review your request and add you.")
             .WithFooter(new EmbedFooterBuilder { Text = "Club Playtime" })
             .WithCurrentTimestamp()
             .Build();

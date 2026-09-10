@@ -119,7 +119,27 @@ builder.Services.AddDbContext<ClubPlaytimeDbContext>(options =>
     }
     else
     {
-        options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
+        var connString = builder.Configuration.GetConnectionString("DefaultConnection")
+                         ?? "Data Source=club-playtime.db";
+
+        // Pin relative SQLite paths to the content root so every launch opens the SAME
+        // database file regardless of the working directory the process was started
+        // from. Previously a relative "club-playtime.db" resolved against the process
+        // CWD, which silently switched between the repo-root copy and the API copy and
+        // caused "user exists in one DB but not the other" for the Discord bot.
+        var sourceMatch = System.Text.RegularExpressions.Regex.Match(
+            connString, @"Data\s*Source\s*=\s*([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (sourceMatch.Success
+            && !string.IsNullOrWhiteSpace(sourceMatch.Groups[1].Value)
+            && !sourceMatch.Groups[1].Value.StartsWith(":") // not :memory:
+            && !Path.IsPathRooted(sourceMatch.Groups[1].Value)
+            && !sourceMatch.Groups[1].Value.Contains(':')) // not a different drive / URI
+        {
+            var absolute = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, sourceMatch.Groups[1].Value));
+            connString = connString.Replace(sourceMatch.Groups[1].Value, absolute);
+        }
+
+        options.UseSqlite(connString);
     }
 });
 
@@ -132,6 +152,12 @@ builder.Services.AddHttpClient<IRobloxPresenceClient, RobloxPresenceClient>(clie
     client.DefaultRequestHeaders.UserAgent.ParseAdd("ClubPlaytimeTracker/1.0");
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<IRobloxProfileClient, RobloxProfileClient>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("ClubPlaytimeTracker/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    client.Timeout = TimeSpan.FromSeconds(20);
 });
 builder.Services.AddHttpClient<IRobloxAvatarClient, RobloxAvatarClient>();
 builder.Services.AddHttpClient<IDiscordNotifier, DiscordNotifier>();

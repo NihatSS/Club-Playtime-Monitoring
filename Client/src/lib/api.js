@@ -113,6 +113,35 @@ export const api = {
       body: JSON.stringify({ username, password })
     }),
 
+  register: (body) =>
+    request('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+
+  me: () => request('/api/auth/me'),
+
+  changePassword: (body) =>
+    request('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+
+  // Roblox account ownership verification (claim existing tracker player)
+  verifyStart: (robloxUserId) =>
+    request('/api/auth/verify/start', {
+      method: 'POST',
+      body: JSON.stringify({ robloxUserId })
+    }),
+
+  verifyCheck: (verificationId, code) =>
+    request('/api/auth/verify/check', {
+      method: 'POST',
+      body: JSON.stringify({ verificationId, code })
+    }),
+
+  playerSearch: (q) => request(`/api/players/search?q=${encodeURIComponent(q ?? '')}`),
+
   logout: () => {
     clearAuth();
   },

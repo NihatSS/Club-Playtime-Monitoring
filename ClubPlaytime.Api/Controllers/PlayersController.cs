@@ -1,13 +1,15 @@
+using ClubPlaytime.Api.Data;
 using ClubPlaytime.Api.DTOs;
 using ClubPlaytime.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ClubPlaytime.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public sealed class PlayersController(IPlayerStatsService playerStatsService) : ControllerBase
+public sealed class PlayersController(IPlayerStatsService playerStatsService, ClubPlaytimeDbContext dbContext) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PlayerDto>>> GetPlayers(CancellationToken cancellationToken)
@@ -62,6 +64,49 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService) : 
     {
         var player = await playerStatsService.GetPlayerByDiscordUserIdAsync(discordUserId, cancellationToken);
         return player is null ? NotFound() : Ok(player);
+    }
+
+    /// <summary>
+    /// Public: searchable list of existing tracker players for the account-claim
+    /// flow. Returns only non-sensitive info (username, avatar, club, claim state).
+    /// </summary>
+    [HttpGet("search")]
+    public async Task<ActionResult<IReadOnlyList<PlayerSearchResultDto>>> SearchPlayers(
+        [FromQuery] string? q,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.Players.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var needle = q.Trim().ToLowerInvariant();
+            query = query.Where(p => p.Username.ToLower().Contains(needle));
+        }
+
+        var claimedPlayerIds = await dbContext.Users
+            .Where(u => u.PlayerId != null)
+            .Select(u => u.PlayerId!.Value)
+            .ToListAsync(cancellationToken);
+
+        var results = await query
+            .OrderBy(p => p.Username)
+            .Take(50)
+            .Select(p => new PlayerSearchResultDto
+            {
+                PlayerId = p.Id,
+                Username = p.Username,
+                RobloxUserId = p.RobloxUserId,
+                AvatarUrl = p.AvatarUrl,
+                Club = p.Club
+            })
+            .ToListAsync(cancellationToken);
+
+        foreach (var result in results)
+        {
+            result.IsClaimed = claimedPlayerIds.Contains(result.PlayerId);
+        }
+
+        return Ok(results);
     }
 
     [HttpPost("link-discord")]

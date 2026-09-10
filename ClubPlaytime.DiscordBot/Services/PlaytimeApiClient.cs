@@ -42,26 +42,66 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
     /// cannot be reached or answers with an error, so callers can distinguish a real
     /// "not found" from an outage instead of showing a misleading message.
     /// </summary>
+    /// <remarks>
+    /// Transient failures (connection refused/reset, timeout, 5xx) are retried with
+    /// exponential backoff. The production API occasionally flaps (brief cold starts /
+    /// restarts), which previously made /playtime and /leaderboard fail randomly even
+    /// though the user was in the database. A short retry turns those transient blips
+    /// into successes without masking a real 404.
+    /// </remarks>
     private async Task<T?> GetAsync<T>(string path, CancellationToken cancellationToken) where T : class
     {
-        try
-        {
-            return await httpClient.GetFromJsonAsync<T>(path, cancellationToken);
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            return null;
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
+        const int maxAttempts = 3;
+        Exception? lastException = null;
 
-            logger.LogWarning(ex, "Failed to fetch {Path} from {BaseUrl}", path, httpClient.BaseAddress);
-            throw new ApiUnavailableException($"The playtime tracker API at {httpClient.BaseAddress} could not be reached.", ex);
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await httpClient.GetFromJsonAsync<T>(path, cancellationToken);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // Genuine "not found" — never retry, return null so callers show "not in tracker".
+                return null;
+            }
+            catch (Exception ex)
+            {
+                if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+
+                lastException = ex;
+                var isTransient = ex is HttpRequestException
+                    || ex is TaskCanceledException; // request timeout
+
+                if (!isTransient || attempt == maxAttempts)
+                {
+                    break;
+                }
+
+                var delay = TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt - 1));
+                logger.LogWarning(ex,
+                    "Transient failure fetching {Path} from {BaseUrl} (attempt {Attempt}/{MaxAttempts}); retrying in {DelayMs}ms",
+                    path, httpClient.BaseAddress, attempt, maxAttempts, (int)delay.TotalMilliseconds);
+
+                try
+                {
+                    await Task.Delay(delay, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+            }
         }
+
+        logger.LogError(lastException, "Failed to fetch {Path} from {BaseUrl} after {Attempts} attempts",
+            path, httpClient.BaseAddress, maxAttempts);
+        throw new ApiUnavailableException(
+            $"The playtime tracker API at {httpClient.BaseAddress} could not be reached.",
+            lastException ?? new HttpRequestException("API request failed."));
     }
 }
 

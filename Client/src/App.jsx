@@ -40,6 +40,7 @@ import {
 import { api, setOnAuthExpired } from './lib/api';
 import { formatDateTime, formatDuration, shortDate } from './lib/format';
 import LoginPage from './components/LoginPage';
+import RegisterPage from './components/RegisterPage';
 import RequestJoinForm from './components/RequestJoinForm';
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -840,6 +841,7 @@ export default function App() {
     return null;
   });
   const [showLogin, setShowLogin] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [myJoinRequest, setMyJoinRequest] = useState(null);
 
@@ -980,6 +982,7 @@ export default function App() {
   }
 
   if (showLogin) return <LoginPage onLogin={handleLogin} />;
+  if (showRegister) return <RegisterPage onLogin={handleLogin} onBack={() => setShowRegister(false)} />;
 
   return (
     <div className="min-h-screen bg-[#050510] text-zinc-50">
@@ -1056,10 +1059,16 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <button type="button" onClick={() => setShowLogin(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80">
-                <LogIn className="h-4 w-4" />
-                Admin Login
-              </button>
+              <>
+                <button type="button" onClick={() => setShowRegister(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]">
+                  <UserPlus className="h-4 w-4" />
+                  Sign up
+                </button>
+                <button type="button" onClick={() => setShowLogin(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80">
+                  <LogIn className="h-4 w-4" />
+                  Login
+                </button>
+              </>
             )}
           </div>
         </div>

@@ -13,6 +13,8 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
 
     public DbSet<User> Users => Set<User>();
 
+    public DbSet<VerificationCode> VerificationCodes => Set<VerificationCode>();
+
     public DbSet<JoinRequest> JoinRequests => Set<JoinRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -55,6 +57,22 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
             entity.Property(user => user.Username).HasMaxLength(50).IsRequired();
             entity.Property(user => user.PasswordHash).IsRequired();
             entity.Property(user => user.Role).HasMaxLength(10).HasDefaultValue("User");
+            entity.Property(user => user.DiscordUserId).HasMaxLength(100);
+
+            // A tracker player can be claimed by at most one website account.
+            entity.HasIndex(user => user.PlayerId).IsUnique();
+            entity.HasOne(user => user.Player)
+                .WithMany()
+                .HasForeignKey(user => user.PlayerId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<VerificationCode>(entity =>
+        {
+            entity.Property(code => code.Code).HasMaxLength(32).IsRequired();
+            entity.HasIndex(code => code.Code).IsUnique();
+            entity.HasIndex(code => new { code.RobloxUserId, code.CreatedAt });
+            entity.Property(code => code.ClaimToken).HasMaxLength(64);
         });
 
         modelBuilder.Entity<JoinRequest>(entity =>
