@@ -72,13 +72,22 @@ public sealed class DiscordBotService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // Check if the API base URL is configured
+        // Check the API configuration and log the effective base URL so a stale
+        // host-level override (e.g. an old Api__BaseUrl env var on Railway) is obvious.
+        var apiBaseUrl = _configuration["Api:BaseUrl"];
         var apiClient = _services.GetRequiredService<PlaytimeApiClient>();
         if (!apiClient.IsConfigured)
         {
-            _logger.LogWarning(
-                "ClubPlaytime API base URL is not configured. Set Api:BaseUrl in appsettings.json " +
-                "(e.g. \"http://localhost:5121/api\"). Commands that need the API will fail.");
+            _logger.LogError(
+                "ClubPlaytime API base URL is not configured — every command that needs the API " +
+                "will treat all lookups as not found. Set Api:BaseUrl in appsettings.json " +
+                "(e.g. \"http://localhost:5121/api\") or the Api__BaseUrl environment variable.");
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Using ClubPlaytime API at {EffectiveBaseUrl} (config value: {ConfiguredValue})",
+                apiClient.EffectiveBaseUrl, string.IsNullOrWhiteSpace(apiBaseUrl) ? "<empty>" : apiBaseUrl);
         }
 
         _client.Log += OnLogAsync;

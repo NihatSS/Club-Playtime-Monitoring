@@ -10,6 +10,11 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
     /// </summary>
     public bool IsConfigured => httpClient.BaseAddress is not null;
 
+    /// <summary>
+    /// The effective base URL the client actually uses, or null when unconfigured.
+    /// </summary>
+    public Uri? EffectiveBaseUrl => httpClient.BaseAddress;
+
     public async Task<List<PlayerDto>?> GetPlayersAsync(CancellationToken cancellationToken = default)
     {
         return await GetAsync<List<PlayerDto>>("players", cancellationToken);
