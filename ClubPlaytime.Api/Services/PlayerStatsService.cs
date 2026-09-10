@@ -268,6 +268,64 @@ public sealed class PlayerStatsService(
         return await GetPlayerDetailsAsync(playerId, cancellationToken);
     }
 
+    /// <summary>
+    /// Bulk sync Discord IDs to players based on Roblox user ID.
+    /// Used to sync Discord links from a source database (e.g. SQLite) to the
+    /// production database (e.g. PostgreSQL) when they get out of sync.
+    /// </summary>
+    public async Task<SyncResult> SyncDiscordIdsAsync(List<DiscordIdMapping> mappings, CancellationToken cancellationToken = default)
+    {
+        var result = new SyncResult();
+
+        foreach (var mapping in mappings)
+        {
+            try
+            {
+                var player = await playerRepository.GetByRobloxUserIdAsync(mapping.RobloxUserId, cancellationToken);
+                if (player is null)
+                {
+                    result.Failed.Add($"RobloxUserId {mapping.RobloxUserId}: player not found");
+                    continue;
+                }
+
+                var normalizedDiscordId = mapping.DiscordUserId.Trim();
+
+                // If the Discord ID is already correctly linked, skip
+                if (string.Equals(player.DiscordUserId, normalizedDiscordId, StringComparison.Ordinal))
+                {
+                    result.Skipped.Add($"RobloxUserId {mapping.RobloxUserId}: already linked to {normalizedDiscordId}");
+                    continue;
+                }
+
+                // If this Discord ID is linked to a different player, report conflict
+                var existingPlayerWithSameDiscord = await playerRepository.GetByDiscordUserIdAsync(normalizedDiscordId, cancellationToken);
+                if (existingPlayerWithSameDiscord is not null && existingPlayerWithSameDiscord.Id != player.Id)
+                {
+                    result.Conflicts.Add($"RobloxUserId {mapping.RobloxUserId}: Discord ID {normalizedDiscordId} already linked to player {existingPlayerWithSameDiscord.Id} ({existingPlayerWithSameDiscord.Username})");
+                    continue;
+                }
+
+                // Unlink the old Discord ID if it was linked to a different player
+                if (existingPlayerWithSameDiscord is not null && existingPlayerWithSameDiscord.Id != player.Id)
+                {
+                    existingPlayerWithSameDiscord.DiscordUserId = null;
+                    existingPlayerWithSameDiscord.UpdatedAt = DateTime.UtcNow;
+                }
+
+                player.DiscordUserId = normalizedDiscordId;
+                player.UpdatedAt = DateTime.UtcNow;
+                result.Synced.Add($"RobloxUserId {mapping.RobloxUserId} ({player.Username}) -> Discord ID {normalizedDiscordId}");
+            }
+            catch (Exception ex)
+            {
+                result.Failed.Add($"RobloxUserId {mapping.RobloxUserId}: {ex.Message}");
+            }
+        }
+
+        await playerRepository.SaveChangesAsync(cancellationToken);
+        return result;
+    }
+
     public async Task<IReadOnlyList<WeeklyLeaderboardDto>> GetWeeklyLeaderboardAsync(CancellationToken cancellationToken = default)
     {
         var players = await playerRepository.GetAllAsync(trackChanges: false, cancellationToken);

@@ -145,4 +145,27 @@ public sealed class PlayersController(
         var player = await playerStatsService.UpdateClubAsync(id, request.Club, cancellationToken);
         return player is null ? NotFound() : Ok(player);
     }
+
+    /// <summary>
+    /// Bulk sync Discord IDs to players. Admin-only endpoint for syncing Discord
+    /// links from another data source (e.g. SQLite backup) to the production database.
+    /// </summary>
+    [HttpPost("sync-discord-ids")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<SyncResult>> SyncDiscordIds(
+        [FromBody] SyncDiscordIdsRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Mappings is null || request.Mappings.Count == 0)
+        {
+            return BadRequest(new { message = "No mappings provided." });
+        }
+
+        logger.LogInformation("Discord ID sync requested with {Count} mappings", request.Mappings.Count);
+        var result = await playerStatsService.SyncDiscordIdsAsync(request.Mappings, cancellationToken);
+        logger.LogInformation(
+            "Discord ID sync completed: {Synced} synced, {Skipped} skipped, {Conflicts} conflicts, {Failed} failed",
+            result.Synced.Count, result.Skipped.Count, result.Conflicts.Count, result.Failed.Count);
+        return Ok(result);
+    }
 }

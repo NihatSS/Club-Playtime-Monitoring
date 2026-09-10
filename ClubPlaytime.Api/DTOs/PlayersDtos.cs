@@ -289,3 +289,32 @@ public sealed class WeeklyLeaderboardDto
         TotalPlaySeconds = totalPlaySeconds;
     }
 }
+
+/// <summary>Request to bulk sync Discord IDs to players.</summary>
+public sealed class SyncDiscordIdsRequest
+{
+    /// <summary>List of player Discord ID mappings to sync.</summary>
+    public List<DiscordIdMapping> Mappings { get; set; } = new();
+}
+
+/// <summary>A single Discord ID mapping for sync operations.</summary>
+public sealed class DiscordIdMapping
+{
+    /// <summary>Roblox user ID of the player to update.</summary>
+    public long RobloxUserId { get; set; }
+    
+    /// <summary>Discord user ID to link to this player.</summary>
+    public string DiscordUserId { get; set; } = string.Empty;
+}
+
+/// <summary>Result of a Discord ID sync operation.</summary>
+public sealed class SyncResult
+{
+    public List<string> Synced { get; set; } = new();
+    public List<string> Skipped { get; set; } = new();
+    public List<string> Conflicts { get; set; } = new();
+    public List<string> Failed { get; set; } = new();
+
+    public int Total => Synced.Count + Skipped.Count + Conflicts.Count + Failed.Count;
+    public int SuccessCount => Synced.Count;
+}
