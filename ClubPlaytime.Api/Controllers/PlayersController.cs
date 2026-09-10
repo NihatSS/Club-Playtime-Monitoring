@@ -9,7 +9,10 @@ namespace ClubPlaytime.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public sealed class PlayersController(IPlayerStatsService playerStatsService, ClubPlaytimeDbContext dbContext) : ControllerBase
+public sealed class PlayersController(
+    IPlayerStatsService playerStatsService,
+    ClubPlaytimeDbContext dbContext,
+    ILogger<PlayersController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PlayerDto>>> GetPlayers(CancellationToken cancellationToken)
@@ -62,7 +65,18 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService, Cl
     [HttpGet("by-discord/{discordUserId}")]
     public async Task<ActionResult<PlayerDetailsDto>> GetPlayerByDiscord(string discordUserId, CancellationToken cancellationToken)
     {
-        var player = await playerStatsService.GetPlayerByDiscordUserIdAsync(discordUserId, cancellationToken);
+        var normalizedDiscordUserId = (discordUserId ?? string.Empty).Trim();
+        if (normalizedDiscordUserId.Length == 0)
+        {
+            return BadRequest(new { message = "A Discord user ID is required." });
+        }
+
+        logger.LogInformation("Discord player lookup requested for Discord user ID {DiscordUserId}", normalizedDiscordUserId);
+        var player = await playerStatsService.GetPlayerByDiscordUserIdAsync(normalizedDiscordUserId, cancellationToken);
+        logger.LogInformation(
+            "Discord player lookup for Discord user ID {DiscordUserId} {LookupResult}",
+            normalizedDiscordUserId,
+            player is null ? "did not find a linked tracker player" : $"resolved tracker player {player.Id}");
         return player is null ? NotFound() : Ok(player);
     }
 
@@ -75,6 +89,7 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService, Cl
         [FromQuery] string? q,
         CancellationToken cancellationToken)
     {
+        logger.LogInformation("Existing tracker-player search requested (query supplied: {HasQuery})", !string.IsNullOrWhiteSpace(q));
         var query = dbContext.Players.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(q))
@@ -106,6 +121,7 @@ public sealed class PlayersController(IPlayerStatsService playerStatsService, Cl
             result.IsClaimed = claimedPlayerIds.Contains(result.PlayerId);
         }
 
+        logger.LogInformation("Existing tracker-player search returned {ResultCount} players", results.Count);
         return Ok(results);
     }
 

@@ -35,7 +35,34 @@ public sealed class PlayerRepository(ClubPlaytimeDbContext dbContext) : IPlayerR
 
     public Task<Player?> GetByDiscordUserIdAsync(string discordUserId, CancellationToken cancellationToken = default)
     {
-        return dbContext.Players.FirstOrDefaultAsync(player => player.DiscordUserId == discordUserId, cancellationToken);
+        var normalizedDiscordUserId = (discordUserId ?? string.Empty).Trim();
+        if (normalizedDiscordUserId.Length == 0)
+        {
+            return Task.FromResult<Player?>(null);
+        }
+
+        // Tracker players pre-date the website-account system, so the primary
+        // Discord link lives on Players.  Accounts created/linked through the
+        // newer website flow can also hold the Discord ID on Users.  Looking up
+        // only Players made a correctly linked website account appear missing to
+        // the Discord bot.
+        return GetByDiscordUserIdCoreAsync(normalizedDiscordUserId, cancellationToken);
+    }
+
+    private async Task<Player?> GetByDiscordUserIdCoreAsync(string discordUserId, CancellationToken cancellationToken)
+    {
+        var player = await dbContext.Players
+            .FirstOrDefaultAsync(p => p.DiscordUserId == discordUserId, cancellationToken);
+
+        if (player is not null)
+        {
+            return player;
+        }
+
+        return await dbContext.Users
+            .Where(u => u.DiscordUserId == discordUserId && u.PlayerId != null)
+            .Select(u => u.Player)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<Player?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)

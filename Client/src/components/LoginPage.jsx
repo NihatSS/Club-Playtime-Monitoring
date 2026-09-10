@@ -35,7 +35,7 @@ export default function LoginPage({ onLogin }) {
               <Gamepad2 className="h-7 w-7" />
             </div>
             <h1 className="text-2xl font-bold text-zinc-50">Club Playtime</h1>
-            <p className="mt-1 text-sm text-mist">Admin Panel Login</p>
+            <p className="mt-1 text-sm text-mist">Sign in to your account</p>
           </div>
 
           {/* Error */}
@@ -103,7 +103,7 @@ export default function LoginPage({ onLogin }) {
         </div>
 
         <p className="mt-4 text-center text-xs text-zinc-500">
-          Admin access only. Contact an administrator for access.
+          Admin features are available automatically to accounts with the Admin role.
         </p>
       </div>
     </div>
