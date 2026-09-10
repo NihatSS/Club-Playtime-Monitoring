@@ -62,12 +62,14 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
         {
             if (!string.IsNullOrWhiteSpace(playerName))
             {
+                // First try username-based lookup (case-insensitive)
                 _logger.LogInformation("Looking up player by name: {Name}", playerName);
                 var allPlayers = await _api.GetPlayersAsync();
                 _logger.LogInformation("GetPlayersAsync returned {Count} players", allPlayers?.Count ?? 0);
 
                 var matched = allPlayers?.FirstOrDefault(p =>
                     p.Username.Equals(playerName, StringComparison.OrdinalIgnoreCase));
+
                 if (matched is not null)
                 {
                     _logger.LogInformation("Found player by name: {Id} {Username}", matched.Id, matched.Username);
@@ -82,6 +84,22 @@ public sealed class PlaytimeModule : InteractionModuleBase<SocketInteractionCont
                         var names = string.Join(", ", allPlayers.Take(10).Select(p => p.Username));
                         _logger.LogWarning("First {Count} player names in DB: {Names}",
                             Math.Min(10, allPlayers.Count), names);
+                    }
+
+                    // Username lookup failed - try Discord ID lookup as fallback.
+                    // The user may have provided a Roblox username that differs from the
+                    // stored username (e.g. after a Roblox username change), but the bot
+                    // can still find the player if their Discord ID is linked.
+                    var discordId = Context.User.Id.ToString();
+                    _logger.LogInformation(
+                        "Username lookup failed for '{PlayerName}', falling back to Discord ID lookup: {DiscordId}",
+                        playerName, discordId);
+                    player = await _api.GetPlayerByDiscordUserIdAsync(discordId);
+                    if (player is not null)
+                    {
+                        _logger.LogInformation(
+                            "Found player by Discord ID after username lookup failed: {PlayerId} {Username}",
+                            player.Id, player.Username);
                     }
                 }
             }
