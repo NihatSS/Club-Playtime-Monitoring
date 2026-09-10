@@ -22,6 +22,11 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
         var username = (request.RobloxUsername ?? string.Empty).Trim();
         var discordUserId = (request.DiscordUserId ?? string.Empty).Trim();
 
+        if (!IsDiscordUserId(discordUserId))
+        {
+            return BadRequest(new { message = "Discord User ID must contain 17 to 20 digits. Enable Discord Developer Mode and use Copy User ID." });
+        }
+
         // One request per user: a user can only have one non-declined request
         // (pending, or already approved and waiting to be added to the tracker)
         var existingRequest = await dbContext.JoinRequests
@@ -168,6 +173,11 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
         var username = (request.RobloxUsername ?? string.Empty).Trim();
         var discordUserId = (request.DiscordUserId ?? string.Empty).Trim();
 
+        if (!IsDiscordUserId(discordUserId))
+        {
+            return BadRequest(new { message = "Discord User ID must contain 17 to 20 digits. Enable Discord Developer Mode and use Copy User ID." });
+        }
+
         var usernameInUse = await dbContext.JoinRequests
                 .AnyAsync(r => r.Id != id && r.Status == "Pending" && r.RobloxUsername.ToLower() == username.ToLower())
             || await dbContext.Players
@@ -305,6 +315,20 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
                     return Conflict(new { message = ex.Message });
                 }
             }
+
+            // A normal user may register before they are added to the tracker.
+            // Once approval creates the player, connect the account that owns
+            // this Discord ID to that player. The Discord ID is validated and
+            // unique among pending/tracked players, so this does not guess by
+            // mutable usernames or create a duplicate player.
+            var trackerPlayer = await dbContext.Players
+                .FirstOrDefaultAsync(p => p.RobloxUserId == joinRequest.RobloxUserId);
+            var websiteUser = await dbContext.Users
+                .FirstOrDefaultAsync(u => u.DiscordUserId == joinRequest.DiscordUserId);
+            if (trackerPlayer is not null && websiteUser is not null && websiteUser.PlayerId is null)
+            {
+                websiteUser.PlayerId = trackerPlayer.Id;
+            }
         }
 
         await dbContext.SaveChangesAsync();
@@ -330,4 +354,7 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
 
         return NoContent();
     }
+
+    private static bool IsDiscordUserId(string value) =>
+        value.Length is >= 17 and <= 20 && value.All(char.IsAsciiDigit);
 }

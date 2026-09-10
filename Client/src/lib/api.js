@@ -12,6 +12,10 @@ function getUsername() {
   return localStorage.getItem('username');
 }
 
+function getDiscordUserId() {
+  return localStorage.getItem('discordUserId');
+}
+
 function isLoggedIn() {
   return !!getToken();
 }
@@ -20,16 +24,19 @@ function isAdmin() {
   return getRole() === 'Admin';
 }
 
-function setAuth(token, role, username) {
+function setAuth(token, role, username, discordUserId = null) {
   localStorage.setItem('token', token);
   localStorage.setItem('role', role);
   localStorage.setItem('username', username);
+  if (discordUserId) localStorage.setItem('discordUserId', discordUserId);
+  else localStorage.removeItem('discordUserId');
 }
 
 function clearAuth() {
   localStorage.removeItem('token');
   localStorage.removeItem('role');
   localStorage.removeItem('username');
+  localStorage.removeItem('discordUserId');
 }
 
 let onAuthExpired = null;
@@ -176,6 +183,7 @@ export const api = {
   isAdmin,
   getRole,
   getUsername,
+  getDiscordUserId,
   setAuth,
   clearAuth,
 };

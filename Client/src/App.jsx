@@ -407,6 +407,11 @@ function PlayerCard({ player, onSelect, selected, rank }) {
           <span>{player.lastSeenPlaying ? formatDateTime(player.lastSeenPlaying) : 'Never'}</span>
         )}
       </div>
+
+      <div className="mt-2 truncate text-xs text-mist" title={player.discordUserId ?? undefined}>
+        <span className="text-zinc-500">Discord:</span>{' '}
+        {player.discordUserId ? <span className="font-mono text-zinc-300">{player.discordUserId}</span> : 'Not linked'}
+      </div>
     </button>
   );
 }
@@ -837,7 +842,8 @@ export default function App() {
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('role');
     const username = localStorage.getItem('username');
-    if (token && role && username) return { token, role, username };
+    const discordUserId = localStorage.getItem('discordUserId');
+    if (token && role && username) return { token, role, username, discordUserId };
     return null;
   });
   const [showLogin, setShowLogin] = useState(false);
@@ -851,7 +857,11 @@ export default function App() {
 
   const isAdmin = user?.role === 'Admin';
 
-  const handleLogin = useCallback((data) => { setUser(data); setShowLogin(false); }, []);
+  const handleLogin = useCallback((data) => {
+    setUser({ ...data, discordUserId: data.discordUserId ?? api.getDiscordUserId() });
+    setShowLogin(false);
+    setShowRegister(false);
+  }, []);
   const handleLogout = useCallback(() => { api.logout(); setUser(null); }, []);
 
   const [players, setPlayers] = useState([]);
@@ -864,7 +874,8 @@ export default function App() {
   const [sortBy, setSortBy] = useState('daily');
   const [sortDirection, setSortDirection] = useState('desc');
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 10;
+  const CARD_PAGE_SIZE = 9;
+  const TABLE_PAGE_SIZE = 10;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -1062,7 +1073,7 @@ export default function App() {
               <>
                 <button type="button" onClick={() => setShowRegister(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]">
                   <UserPlus className="h-4 w-4" />
-                  Sign up
+                  Register
                 </button>
                 <button type="button" onClick={() => setShowLogin(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80">
                   <LogIn className="h-4 w-4" />
@@ -1079,6 +1090,7 @@ export default function App() {
           <RequestJoinForm
             onClose={() => setShowRequestForm(false)}
             onMyRequestChange={setMyJoinRequest}
+            defaultDiscordUserId={user?.discordUserId ?? ''}
           />
         </div>
       )}
@@ -1175,10 +1187,10 @@ export default function App() {
                   </select>
 
                   <div className="inline-flex rounded-lg border border-neon-cyan/[0.08] bg-ink p-1">
-                    <button type="button" onClick={() => setView('cards')} className={`grid h-8 w-8 place-items-center rounded-md transition ${view === 'cards' ? 'bg-zinc-700 text-zinc-50' : 'text-mist hover:text-zinc-100'}`} title="Cards">
+                    <button type="button" onClick={() => { setView('cards'); setPage(1); }} className={`grid h-8 w-8 place-items-center rounded-md transition ${view === 'cards' ? 'bg-zinc-700 text-zinc-50' : 'text-mist hover:text-zinc-100'}`} title="Cards">
                       <LayoutGrid className="h-4 w-4" />
                     </button>
-                    <button type="button" onClick={() => setView('table')} className={`grid h-8 w-8 place-items-center rounded-md transition ${view === 'table' ? 'bg-zinc-700 text-zinc-50' : 'text-mist hover:text-zinc-100'}`} title="Table">
+                    <button type="button" onClick={() => { setView('table'); setPage(1); }} className={`grid h-8 w-8 place-items-center rounded-md transition ${view === 'table' ? 'bg-zinc-700 text-zinc-50' : 'text-mist hover:text-zinc-100'}`} title="Table">
                       <Table2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -1219,15 +1231,16 @@ export default function App() {
 
             {/* Players */}
             {(() => {
-              const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / PAGE_SIZE));
+              const pageSize = view === 'cards' ? CARD_PAGE_SIZE : TABLE_PAGE_SIZE;
+              const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / pageSize));
               const safePage = Math.min(page, totalPages);
-              const pageStart = (safePage - 1) * PAGE_SIZE;
-              const pagePlayers = filteredPlayers.slice(pageStart, pageStart + PAGE_SIZE);
+              const pageStart = (safePage - 1) * pageSize;
+              const pagePlayers = filteredPlayers.slice(pageStart, pageStart + pageSize);
 
               return (
                 <>
                   {view === 'cards' ? (
-                    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                       {pagePlayers.map((player, i) => (
                         <PlayerCard key={player.id} player={player} onSelect={setSelectedId} selected={selectedId === player.id} rank={pageStart + i + 1} />
                       ))}
@@ -1242,7 +1255,7 @@ export default function App() {
                   {/* Pagination */}
                   {totalPages > 1 && (
                     <div className="flex items-center justify-between text-xs text-zinc-500 pt-1">
-                      <span>Showing {pageStart + 1} to {Math.min(pageStart + PAGE_SIZE, filteredPlayers.length)} of {filteredPlayers.length} players</span>
+                      <span>Showing {pageStart + 1} to {Math.min(pageStart + pageSize, filteredPlayers.length)} of {filteredPlayers.length} players</span>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"

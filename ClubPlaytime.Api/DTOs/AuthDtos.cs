@@ -16,6 +16,7 @@ public sealed class LoginResponse
     public string Token { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string Username { get; set; } = string.Empty;
+    public string? DiscordUserId { get; set; }
 }
 
 public sealed class CreateUserRequest
@@ -49,6 +50,14 @@ public sealed class RegisterRequest
 
     /// <summary>Optional claim token obtained after Roblox ownership verification.</summary>
     public string? ClaimToken { get; set; }
+
+    /// <summary>
+    /// Discord snowflake supplied by the account owner. When an existing tracker
+    /// player is claimed, this is also written to that player so the bot and the
+    /// website use the same canonical Discord link.
+    /// </summary>
+    [MaxLength(20)]
+    public string? DiscordUserId { get; set; }
 }
 
 public sealed class VerifyStartRequest

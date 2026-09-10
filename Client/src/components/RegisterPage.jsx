@@ -65,7 +65,7 @@ export default function RegisterPage({ onLogin, onBack }) {
   const [copied, setCopied] = useState(false);
 
   // Account creation state
-  const [form, setForm] = useState({ username: '', password: '', confirm: '' });
+  const [form, setForm] = useState({ username: '', password: '', confirm: '', discordUserId: '' });
 
   const searchTimer = useRef(null);
 
@@ -150,13 +150,14 @@ export default function RegisterPage({ onLogin, onBack }) {
     try {
       const body = {
         username: form.username.trim(),
-        password: form.password
+        password: form.password,
+        discordUserId: form.discordUserId.trim()
       };
       if (verifyResult?.claimToken) {
         body.claimToken = verifyResult.claimToken;
       }
       const data = await api.register(body);
-      api.setAuth(data.token, data.role, data.username);
+      api.setAuth(data.token, data.role, data.username, data.discordUserId);
       onLogin(data);
     } catch (err) {
       setError(err.message);
@@ -442,6 +443,24 @@ export default function RegisterPage({ onLogin, onBack }) {
                     minLength={6}
                     autoComplete="new-password"
                   />
+                </div>
+                <div>
+                  <label htmlFor="reg-discord-id" className="mb-1.5 block text-sm font-medium text-zinc-300">
+                    Discord User ID{verifyResult?.verified ? '' : ' (optional until you join the tracker)'}
+                  </label>
+                  <input
+                    id="reg-discord-id"
+                    type="text"
+                    inputMode="numeric"
+                    value={form.discordUserId}
+                    onChange={(e) => setForm((c) => ({ ...c, discordUserId: e.target.value.replace(/\s/g, '') }))}
+                    placeholder="Example: 123456789012345678"
+                    className={inputClass}
+                    required={!!verifyResult?.verified}
+                    minLength={verifyResult?.verified ? 17 : undefined}
+                    maxLength={20}
+                  />
+                  <p className="mt-1.5 text-xs text-mist">Use Discord's Developer Mode, then right-click your profile and choose Copy User ID. This is what <span className="font-mono text-zinc-300">/playtime</span> uses.</p>
                 </div>
                 <button type="submit" disabled={busy} className={primaryBtnClass}>
                   <UserPlus className="h-4 w-4" />

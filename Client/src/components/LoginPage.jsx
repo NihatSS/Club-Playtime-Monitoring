@@ -16,7 +16,7 @@ export default function LoginPage({ onLogin }) {
 
     try {
       const data = await api.login(username, password);
-      api.setAuth(data.token, data.role, data.username);
+      api.setAuth(data.token, data.role, data.username, data.discordUserId);
       onLogin(data);
     } catch (err) {
       setError(err.message);

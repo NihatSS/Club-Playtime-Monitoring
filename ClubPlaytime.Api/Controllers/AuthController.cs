@@ -45,7 +45,8 @@ public sealed class AuthController(
         {
             Token = token,
             Role = user.Role,
-            Username = user.Username
+            Username = user.Username,
+            DiscordUserId = user.DiscordUserId
         });
     }
 
@@ -61,6 +62,7 @@ public sealed class AuthController(
     {
         var username = (request.Username ?? string.Empty).Trim();
         var password = request.Password ?? string.Empty;
+        var discordUserId = (request.DiscordUserId ?? string.Empty).Trim();
 
         if (username.Length < 3 || username.Length > 50)
         {
@@ -77,10 +79,32 @@ public sealed class AuthController(
             return Conflict(new { message = $"Username '{username}' is already taken." });
         }
 
+        if (discordUserId.Length > 0 && !IsDiscordUserId(discordUserId))
+        {
+            return BadRequest(new { message = "Discord User ID must contain 17 to 20 digits. Enable Discord Developer Mode and use Copy User ID." });
+        }
+
+        if (discordUserId.Length > 0 && await dbContext.Users.AnyAsync(u => u.DiscordUserId == discordUserId))
+        {
+            return Conflict(new { message = "That Discord account is already linked to another website account." });
+        }
+
+        if (discordUserId.Length > 0
+            && string.IsNullOrWhiteSpace(request.ClaimToken)
+            && await dbContext.Players.AnyAsync(p => p.DiscordUserId == discordUserId))
+        {
+            return Conflict(new { message = "That Discord account is already linked to a tracker player. Choose 'I'm already in the tracker' to claim it instead." });
+        }
+
         int? playerId = null;
 
         if (!string.IsNullOrWhiteSpace(request.ClaimToken))
         {
+            if (discordUserId.Length == 0)
+            {
+                return BadRequest(new { message = "A Discord User ID is required when claiming a tracker player so /playtime can find your account." });
+            }
+
             var verification = await dbContext.VerificationCodes
                 .FirstOrDefaultAsync(v => v.ClaimToken == request.ClaimToken.Trim());
 
@@ -104,7 +128,19 @@ public sealed class AuthController(
                 return Conflict(new { message = "This tracker player has already been claimed by another account." });
             }
 
+            var playerWithDiscordId = await dbContext.Players
+                .FirstOrDefaultAsync(p => p.DiscordUserId == discordUserId);
+            if (playerWithDiscordId is not null && playerWithDiscordId.Id != player.Id)
+            {
+                return Conflict(new { message = "That Discord account is already linked to a different tracker player." });
+            }
+
             playerId = player.Id;
+            // The Discord bot looks up tracker players. Keep the player and its
+            // linked website account in sync instead of leaving two competing
+            // sources of truth after a claim.
+            player.DiscordUserId = discordUserId;
+            player.UpdatedAt = DateTime.UtcNow;
             verification.ClaimedAt = DateTime.UtcNow;
         }
 
@@ -114,6 +150,7 @@ public sealed class AuthController(
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
             Role = "User",
             PlayerId = playerId,
+            DiscordUserId = discordUserId.Length == 0 ? null : discordUserId,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -126,7 +163,8 @@ public sealed class AuthController(
         {
             Token = token,
             Role = user.Role,
-            Username = user.Username
+            Username = user.Username,
+            DiscordUserId = user.DiscordUserId
         });
     }
 
@@ -372,4 +410,7 @@ public sealed class AuthController(
     {
         return Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
     }
-}
+
+    private static bool IsDiscordUserId(string value) =>
+        value.Length is >= 17 and <= 20 && value.All(char.IsAsciiDigit);
+}

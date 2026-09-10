@@ -16,12 +16,12 @@ const ROBLOX_FRIEND_URL = 'https://www.roblox.com/users/11291447439/profile';
 
 const CLUB_OPTIONS = ['PIH', 'P1H', 'Custom', 'None'];
 
-function toFormState(req) {
+function toFormState(req, defaultDiscordUserId = '') {
   const isCustomClub = !!req?.club && !CLUB_OPTIONS.includes(req.club);
   return {
     robloxUsername: req?.robloxUsername ?? '',
     robloxUserId: req?.robloxUserId != null ? String(req.robloxUserId) : '',
-    discordUserId: req?.discordUserId ?? '',
+    discordUserId: req?.discordUserId ?? defaultDiscordUserId,
     club: isCustomClub ? 'Custom' : (req?.club || 'PIH'),
     customClub: isCustomClub ? req.club : '',
     note: req?.note ?? '',
@@ -54,14 +54,14 @@ function StatusPill({ status }) {
   );
 }
 
-export default function RequestJoinForm({ onClose, onMyRequestChange }) {
+export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDiscordUserId = '' }) {
   const [myRequest, setMyRequest] = useState(null);
   const [loadingMine, setLoadingMine] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     robloxUsername: '',
     robloxUserId: '',
-    discordUserId: '',
+    discordUserId: defaultDiscordUserId,
     club: 'PIH',
     customClub: '',
     note: '',
@@ -142,13 +142,13 @@ export default function RequestJoinForm({ onClose, onMyRequestChange }) {
   }
 
   function startEditing() {
-    setForm((prev) => ({ ...toFormState(myRequest), robloxUserId: prev.robloxUserId, addedFriend: false }));
+    setForm((prev) => ({ ...toFormState(myRequest, defaultDiscordUserId), robloxUserId: prev.robloxUserId, addedFriend: false }));
     setEditing(true);
     setResult(null);
   }
 
   function cancelEditing() {
-    setForm((prev) => ({ ...toFormState(null), robloxUserId: prev.robloxUserId, addedFriend: false }));
+    setForm((prev) => ({ ...toFormState(null, defaultDiscordUserId), robloxUserId: prev.robloxUserId, addedFriend: false }));
     setEditing(false);
     setResult(null);
   }
@@ -327,12 +327,15 @@ export default function RequestJoinForm({ onClose, onMyRequestChange }) {
                 <input
                   id="rj-discord"
                   value={form.discordUserId}
-                  onChange={handleChange('discordUserId')}
-                  placeholder="Your Discord user ID"
+                  onChange={(event) => setForm((prev) => ({ ...prev, discordUserId: event.target.value.replace(/\s/g, '') }))}
+                  placeholder="123456789012345678"
                   className="w-full min-h-10 rounded-md border border-line bg-ink px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
+                  inputMode="numeric"
                   required
-                  maxLength={100}
+                  minLength={17}
+                  maxLength={20}
                 />
+                <p className="mt-1 text-[11px] text-zinc-500">Use Copy User ID in Discord Developer Mode, not your username.</p>
               </div>
               <div>
                 <label htmlFor="rj-club" className="block text-xs font-medium text-zinc-400 mb-1">
