@@ -54,23 +54,41 @@ function StatusPill({ status }) {
   );
 }
 
-export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDiscordUserId = '' }) {
+export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDiscordUserId = '', profile = null }) {
   const [myRequest, setMyRequest] = useState(null);
   const [loadingMine, setLoadingMine] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({
-    robloxUsername: '',
-    robloxUserId: '',
-    discordUserId: defaultDiscordUserId,
-    club: 'PIH',
-    customClub: '',
-    note: '',
-    addedFriend: false
-  });
+  const [form, setForm] = useState(() =>
+    toFormState(
+      profile?.joinRequest ?? null,
+      defaultDiscordUserId || profile?.discordUserId || ''
+    )
+  );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
 
   const loadMyRequest = useCallback(async () => {
+    // Phase 10: signed-in users resolve their request by account, not by a
+    // Roblox ID they type in — avoids mismatches after a username change.
+    if (profile) {
+      try {
+        setLoadingMine(true);
+        const data = await api.getMyJoinRequestAuthenticated();
+        const request = data.exists ? data.request : null;
+        setMyRequest(request);
+        onMyRequestChange?.(request);
+        if (!form.robloxUserId && request) {
+          setForm((prev) => ({ ...prev, ...toFormState(request, profile.discordUserId || defaultDiscordUserId), robloxUserId: String(request.robloxUserId) }));
+        }
+      } catch {
+        setMyRequest(null);
+        onMyRequestChange?.(null);
+      } finally {
+        setLoadingMine(false);
+      }
+      return;
+    }
+
     const userId = (form.robloxUserId || '').trim();
     if (!/^\d+$/.test(userId)) {
       setMyRequest(null);
@@ -90,7 +108,8 @@ export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDis
     } finally {
       setLoadingMine(false);
     }
-  }, [form.robloxUserId, onMyRequestChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.robloxUserId, onMyRequestChange, profile]);
 
   useEffect(() => {
     loadMyRequest();
@@ -99,6 +118,18 @@ export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDis
   function handleChange(field) {
     return (event) => setForm((prev) => ({ ...prev, [field]: event.target.value }));
   }
+
+  // Prefill from profile once it arrives (Phase 10: request uses profile info).
+  useEffect(() => {
+    if (!profile || myRequest || editing) return;
+    setForm((prev) => ({
+      ...prev,
+      robloxUsername: prev.robloxUsername || profile.player?.username || '',
+      robloxUserId: prev.robloxUserId || (profile.player ? String(profile.player.robloxUserId) : ''),
+      discordUserId: prev.discordUserId || profile.discordUserId || ''
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
 
   async function handleSubmit(event) {
     event.preventDefault();

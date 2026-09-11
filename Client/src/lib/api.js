@@ -128,6 +128,18 @@ export const api = {
 
   me: () => request('/api/auth/me'),
 
+  // Phase 8: profile page
+  myProfile: () => request('/api/profile/me'),
+  updateDiscord: (discordUserId) =>
+    request('/api/profile/discord', {
+      method: 'POST',
+      body: JSON.stringify({ discordUserId })
+    }),
+
+  // Admin: user management (Phase 8)
+  getUserDetail: (id) => request(`/api/admin/users/${id}`),
+  updateUser: (id, body) => request(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+
   changePassword: (body) =>
     request('/api/auth/change-password', {
       method: 'POST',
@@ -168,6 +180,7 @@ export const api = {
   // Join requests (public)
   submitJoinRequest: (body) => request('/api/joinrequest', { method: 'POST', body: JSON.stringify(body) }),
   getMyJoinRequest: (robloxUserId) => request(`/api/joinrequest/mine?robloxUserId=${encodeURIComponent(robloxUserId)}`),
+  getMyJoinRequestAuthenticated: () => request('/api/joinrequest/mine-auth'),
   updateJoinRequest: (id, body) => request(`/api/joinrequest/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
 
   // Join requests (admin)

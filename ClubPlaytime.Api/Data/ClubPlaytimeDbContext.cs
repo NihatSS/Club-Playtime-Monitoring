@@ -84,6 +84,12 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
             entity.Property(r => r.Status).HasMaxLength(20).IsRequired();
             entity.Property(r => r.Note).HasMaxLength(500);
             entity.Property(r => r.ReviewedBy).HasMaxLength(50);
+
+            // A website account can only have one active (non-declined) request.
+            entity.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
 

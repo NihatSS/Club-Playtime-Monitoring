@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Gamepad2 } from 'lucide-react';
+import { Gamepad2, X } from 'lucide-react';
 import LoginForm from './LoginForm';
 import RegisterFlow from './RegisterFlow';
 
-export default function AuthPage({ onLogin }) {
+export default function AuthPage({ onLogin, onClose }) {
   const [mode, setMode] = useState('login');
 
   return (
@@ -19,13 +19,25 @@ export default function AuthPage({ onLogin }) {
               <div className="text-[11px] text-mist">Racket Rivals tracker</div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setMode((m) => (m === 'login' ? 'register' : 'login'))}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-300 transition hover:bg-neon-cyan/[0.06]"
-          >
-            {mode === 'login' ? 'Register' : 'Back to login'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMode((m) => (m === 'login' ? 'register' : 'login'))}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-300 transition hover:bg-neon-cyan/[0.06]"
+            >
+              {mode === 'login' ? 'Register' : 'Back to login'}
+            </button>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                title="Close"
+                className="grid h-9 w-9 place-items-center rounded-lg border border-neon-cyan/[0.08] text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </header>
 

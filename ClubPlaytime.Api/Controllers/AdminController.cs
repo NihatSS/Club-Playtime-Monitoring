@@ -230,4 +230,133 @@ public sealed class AdminController(ClubPlaytimeDbContext dbContext) : Controlle
 
         return Ok(new { message = "Password updated successfully." });
     }
+
+    /// <summary>
+    /// Admin: full user detail including Discord link and linked tracker player.
+    /// </summary>
+    [HttpGet("users/{id:int}")]
+    public async Task<ActionResult<AdminUserDetailDto>> GetUserDetail(int id)
+    {
+        var user = await dbContext.Users
+            .Include(u => u.Player)
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user is null)
+        {
+            return NotFound(new { message = "User not found." });
+        }
+
+        return Ok(new AdminUserDetailDto
+        {
+            Id = user.Id,
+            Username = user.Username,
+            Role = user.Role,
+            CreatedAt = user.CreatedAt,
+            DiscordUserId = user.DiscordUserId,
+            PlayerId = user.PlayerId,
+            PlayerUsername = user.Player?.Username,
+            PlayerRobloxUserId = user.Player?.RobloxUserId
+        });
+    }
+
+    /// <summary>
+    /// Admin: update a user's profile information (username, role, Discord link,
+    /// linked tracker player). Used to manage accounts when necessary.
+    /// </summary>
+    [HttpPut("users/{id:int}")]
+    public async Task<IActionResult> UpdateUser(int id, AdminUpdateUserRequest request)
+    {
+        var user = await dbContext.Users
+            .Include(u => u.Player)
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user is null)
+        {
+            return NotFound(new { message = "User not found." });
+        }
+
+        var username = (request.Username ?? string.Empty).Trim();
+        if (username.Length < 3 || username.Length > 50)
+        {
+            return BadRequest(new { message = "Username must be between 3 and 50 characters." });
+        }
+
+        if (await dbContext.Users.AnyAsync(u => u.Id != id && u.Username == username))
+        {
+            return Conflict(new { message = $"Username '{username}' is already taken." });
+        }
+
+        var validRoles = new[] { "User", "Admin" };
+        if (!validRoles.Contains(request.Role))
+        {
+            return BadRequest(new { message = "Invalid role. Must be User or Admin." });
+        }
+
+        var currentUsername = User.Identity?.Name;
+        if (user.Role == "Admin" && request.Role != "Admin" && user.Username == currentUsername)
+        {
+            return BadRequest(new { message = "You cannot demote your own account." });
+        }
+
+        var discordUserId = (request.DiscordUserId ?? string.Empty).Trim();
+        if (discordUserId.Length > 0
+            && (discordUserId.Length is < 17 or > 20 || !discordUserId.All(char.IsAsciiDigit)))
+        {
+            return BadRequest(new { message = "Discord User ID must contain 17 to 20 digits." });
+        }
+
+        if (discordUserId.Length > 0
+            && await dbContext.Users.AnyAsync(u => u.Id != id && u.DiscordUserId == discordUserId))
+        {
+            return Conflict(new { message = "That Discord account is already linked to another website account." });
+        }
+
+        // Player link: only allowed when the target player exists and is unclaimed.
+        if (request.PlayerId is not null)
+        {
+            var player = await dbContext.Players.FindAsync(request.PlayerId.Value);
+            if (player is null)
+            {
+                return BadRequest(new { message = "Tracker player not found." });
+            }
+
+            var claimedBy = await dbContext.Users.FirstOrDefaultAsync(u => u.PlayerId == player.Id && u.Id != id);
+            if (claimedBy is not null)
+            {
+                return Conflict(new { message = $"That tracker player is already linked to account '{claimedBy.Username}'." });
+            }
+        }
+
+        user.Username = username;
+        user.Role = request.Role;
+        user.DiscordUserId = discordUserId.Length == 0 ? null : discordUserId;
+
+        // Keep the previously linked player and the newly linked one consistent.
+        var previousPlayerId = user.PlayerId;
+        user.PlayerId = request.PlayerId;
+        if (previousPlayerId != user.PlayerId)
+        {
+            if (user.Player is not null && user.Player.DiscordUserId == discordUserId)
+            {
+                user.Player.DiscordUserId = null;
+            }
+        }
+
+        if (user.PlayerId is not null)
+        {
+            var linkedPlayer = await dbContext.Players.FindAsync(user.PlayerId.Value);
+            if (linkedPlayer is not null)
+            {
+                if (user.DiscordUserId is not null)
+                {
+                    linkedPlayer.DiscordUserId = user.DiscordUserId;
+                }
+                linkedPlayer.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        return Ok(new { message = "User updated." });
+    }
 }

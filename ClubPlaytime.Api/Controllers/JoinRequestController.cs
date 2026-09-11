@@ -13,7 +13,9 @@ namespace ClubPlaytime.Api.Controllers;
 public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlayerStatsService playerStatsService) : ControllerBase
 {
     /// <summary>
-    /// Public: Submit a request to be added to the tracker.
+    /// Public: Submit a request to be added to the tracker. When the caller is
+    /// authenticated, the request is stamped with their website account so the
+    /// profile page and Phase 10 approval linking can use it.
     /// </summary>
     [HttpPost]
     [AllowAnonymous]
@@ -26,6 +28,8 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
         {
             return BadRequest(new { message = "Discord User ID must contain 17 to 20 digits. Enable Discord Developer Mode and use Copy User ID." });
         }
+
+        var currentUser = await GetCurrentUserAsync();
 
         // One request per user: a user can only have one non-declined request
         // (pending, or already approved and waiting to be added to the tracker)
@@ -88,7 +92,8 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
             Club = request.Club,
             Note = request.Note,
             Status = "Pending",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            UserId = currentUser?.Id
         };
 
         dbContext.JoinRequests.Add(joinRequest);
@@ -104,6 +109,36 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
             Status = joinRequest.Status,
             Note = joinRequest.Note,
             CreatedAt = joinRequest.CreatedAt
+        });
+    }
+
+    /// <summary>
+    /// Authenticated: the current user's most recent join request, matched by
+    /// their website account rather than a Roblox user ID they supply.
+    /// </summary>
+    [HttpGet("mine-auth")]
+    [Authorize]
+    public async Task<IActionResult> GetMyRequestAuthenticated(CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentUserAsync();
+        if (currentUser is null)
+        {
+            return Unauthorized(new { message = "User not found." });
+        }
+
+        var joinRequest = await dbContext.JoinRequests
+            .OrderByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync(r => r.UserId == currentUser.Id, cancellationToken);
+
+        if (joinRequest is null)
+        {
+            return Ok(new JoinRequestExistsDto { Exists = false });
+        }
+
+        return Ok(new JoinRequestExistsDto
+        {
+            Exists = true,
+            Request = ToDto(joinRequest)
         });
     }
 
@@ -316,18 +351,31 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
                 }
             }
 
-            // A normal user may register before they are added to the tracker.
-            // Once approval creates the player, connect the account that owns
-            // this Discord ID to that player. The Discord ID is validated and
-            // unique among pending/tracked players, so this does not guess by
-            // mutable usernames or create a duplicate player.
+            // Phase 10: approval links the requesting website account to the
+            // tracker player — the existing player when the Roblox ID is already
+            // tracked (playtime preserved), otherwise the newly created one. The
+            // Discord-ID fallback below covers legacy requests with no UserId.
             var trackerPlayer = await dbContext.Players
                 .FirstOrDefaultAsync(p => p.RobloxUserId == joinRequest.RobloxUserId);
-            var websiteUser = await dbContext.Users
-                .FirstOrDefaultAsync(u => u.DiscordUserId == joinRequest.DiscordUserId);
-            if (trackerPlayer is not null && websiteUser is not null && websiteUser.PlayerId is null)
+
+            var requestingUser = joinRequest.UserId is not null
+                ? await dbContext.Users.FirstOrDefaultAsync(u => u.Id == joinRequest.UserId.Value)
+                : await dbContext.Users.FirstOrDefaultAsync(u => u.DiscordUserId == joinRequest.DiscordUserId);
+
+            if (trackerPlayer is not null && requestingUser is not null)
             {
-                websiteUser.PlayerId = trackerPlayer.Id;
+                if (requestingUser.PlayerId is null)
+                {
+                    requestingUser.PlayerId = trackerPlayer.Id;
+                }
+
+                // Keep the bot's Discord link canonical on the player as well.
+                if (!string.IsNullOrWhiteSpace(requestingUser.DiscordUserId)
+                    && string.IsNullOrWhiteSpace(trackerPlayer.DiscordUserId))
+                {
+                    trackerPlayer.DiscordUserId = requestingUser.DiscordUserId;
+                    trackerPlayer.UpdatedAt = DateTime.UtcNow;
+                }
             }
         }
 
@@ -354,6 +402,32 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
 
         return NoContent();
     }
+
+    /// <summary>Resolve the authenticated website account, if the caller has one.</summary>
+    private async Task<User?> GetCurrentUserAsync()
+    {
+        var username = User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return null;
+        }
+
+        return await dbContext.Users.FirstOrDefaultAsync(u => u.Username == username);
+    }
+
+    private static JoinRequestDto ToDto(JoinRequest r) => new()
+    {
+        Id = r.Id,
+        RobloxUsername = r.RobloxUsername,
+        RobloxUserId = r.RobloxUserId,
+        DiscordUserId = r.DiscordUserId,
+        Club = r.Club,
+        Status = r.Status,
+        Note = r.Note,
+        CreatedAt = r.CreatedAt,
+        ReviewedAt = r.ReviewedAt,
+        ReviewedBy = r.ReviewedBy
+    };
 
     private static bool IsDiscordUserId(string value) =>
         value.Length is >= 17 and <= 20 && value.All(char.IsAsciiDigit);

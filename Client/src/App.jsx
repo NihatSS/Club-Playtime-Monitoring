@@ -40,6 +40,8 @@ import {
 import { api, setOnAuthExpired } from './lib/api';
 import { formatDateTime, formatDuration, shortDate } from './lib/format';
 import AuthPage from './components/AuthPage';
+import ProfilePage from './components/ProfilePage';
+import ProfileSetupGuide from './components/ProfileSetupGuide';
 import RequestJoinForm from './components/RequestJoinForm';
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -865,18 +867,54 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [myJoinRequest, setMyJoinRequest] = useState(null);
+  const [myProfile, setMyProfile] = useState(null);
+
+  // Hash routing: #/profile shows the profile page.
+  const [route, setRoute] = useState(() => window.location.hash.replace(/^#\/?/, ''));
+  useEffect(() => {
+    function onHashChange() {
+      setRoute(window.location.hash.replace(/^#\/?/, ''));
+    }
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const showProfile = route === 'profile' && !!user;
+  const showProfilePage = showProfile;
 
   useEffect(() => {
     setOnAuthExpired(() => { setUser(null); setShowAuth(false); });
   }, []);
+
+  // Load the signed-in user's profile for the setup guide and join form prefill.
+  const loadMyProfile = useCallback(async () => {
+    if (!api.isLoggedIn()) { setMyProfile(null); return; }
+    try {
+      const data = await api.myProfile();
+      setMyProfile(data);
+      if (data.joinRequest) setMyJoinRequest(data.joinRequest);
+    } catch {
+      setMyProfile(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMyProfile();
+  }, [loadMyProfile, user?.username]);
 
   const isAdmin = user?.role === 'Admin';
 
   const handleLogin = useCallback((data) => {
     setUser({ ...data, discordUserId: data.discordUserId ?? api.getDiscordUserId() });
     setShowAuth(false);
+    loadMyProfile();
+  }, [loadMyProfile]);
+  const handleLogout = useCallback(() => {
+    api.logout();
+    setUser(null);
+    setMyProfile(null);
+    if (window.location.hash) window.location.hash = '';
   }, []);
-  const handleLogout = useCallback(() => { api.logout(); setUser(null); }, []);
 
   const [players, setPlayers] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -1006,7 +1044,16 @@ export default function App() {
     try { await api.updateClub(id, club); await loadDetails(id); await loadDashboard(true); setError(''); } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
 
-  if (showAuth) return <AuthPage onLogin={handleLogin} />;
+  if (showAuth) return <AuthPage onLogin={handleLogin} onClose={() => setShowAuth(false)} />;
+
+  if (showProfilePage) {
+    return (
+      <ProfilePage
+        user={user}
+        onBack={() => { window.location.hash = ''; }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#050510] text-zinc-50">
@@ -1073,11 +1120,16 @@ export default function App() {
 
             {user ? (
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-3 py-1.5 text-xs font-medium text-zinc-300">
+                <button
+                  type="button"
+                  onClick={() => { window.location.hash = 'profile'; }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100"
+                  title="View my profile"
+                >
                   <Shield className="h-3.5 w-3.5" />
                   {user.username}
                   {isAdmin && <span className="text-neon-green">(Admin)</span>}
-                </span>
+                </button>
                 <button type="button" onClick={handleLogout} className="grid h-9 w-9 place-items-center rounded-lg border border-neon-cyan/[0.08] text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100">
                   <LogOut className="h-4 w-4" />
                 </button>
@@ -1100,6 +1152,7 @@ export default function App() {
             onClose={() => setShowRequestForm(false)}
             onMyRequestChange={setMyJoinRequest}
             defaultDiscordUserId={user?.discordUserId ?? ''}
+            profile={myProfile}
           />
         </div>
       )}
@@ -1112,6 +1165,8 @@ export default function App() {
             {error && (
               <div className="rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</div>
             )}
+
+            {user && <ProfileSetupGuide profile={myProfile} onRequestJoin={() => setShowRequestForm(true)} />}
 
             {/* Stats */}
             <section className="grid gap-3 grid-cols-2 lg:grid-cols-4">

@@ -55,6 +55,8 @@ public sealed class JoinRequestDto
 public sealed class JoinRequestExistsDto
 {
     public bool Exists { get; set; }
+
+    public JoinRequestDto? Request { get; set; }
 }
 
 public sealed class ReviewJoinRequest

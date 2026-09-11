@@ -8,6 +8,14 @@ public sealed class JoinRequest
 
     public long RobloxUserId { get; set; }
 
+    /// <summary>
+    /// Website account that submitted this request (nullable for legacy
+    /// anonymous requests submitted before accounts were linked to requests).
+    /// </summary>
+    public int? UserId { get; set; }
+
+    public User? User { get; set; }
+
     public string DiscordUserId { get; set; } = string.Empty;
 
     public string Club { get; set; } = "PIH";

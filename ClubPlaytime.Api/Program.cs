@@ -237,6 +237,26 @@ static void ApplyPostgresAccountLinkSchema(ClubPlaytimeDbContext dbContext)
                     ADD CONSTRAINT "FK_Users_Players_PlayerId"
                     FOREIGN KEY ("PlayerId") REFERENCES "Players" ("Id") ON DELETE SET NULL;
             END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'JoinRequests'
+                  AND column_name = 'UserId'
+            ) THEN
+                ALTER TABLE "JoinRequests" ADD COLUMN "UserId" integer NULL;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'FK_JoinRequests_Users_UserId'
+                  AND conrelid = '"JoinRequests"'::regclass
+            ) THEN
+                ALTER TABLE "JoinRequests"
+                    ADD CONSTRAINT "FK_JoinRequests_Users_UserId"
+                    FOREIGN KEY ("UserId") REFERENCES "Users" ("Id") ON DELETE SET NULL;
+            END IF;
         END $$;
         """);
 
