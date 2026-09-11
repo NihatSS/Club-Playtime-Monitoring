@@ -7,6 +7,7 @@ import {
   CalendarClock,
   CheckCircle,
   Circle,
+  CircleUser,
   Clock,
   Copy,
   Download,
@@ -1142,12 +1143,11 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => { window.location.hash = 'profile'; }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100"
-                  title="View my profile"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-neon-cyan/40 bg-neon-cyan/10 px-3.5 py-2 text-sm font-semibold text-neon-cyan shadow-[0_0_12px_rgba(0,229,255,0.15)] transition hover:bg-neon-cyan/20 hover:shadow-[0_0_18px_rgba(0,229,255,0.3)]"
+                  title="Go to my profile"
                 >
-                  <Shield className="h-3.5 w-3.5" />
-                  {user.username}
-                  {isAdmin && <span className="text-neon-green">(Admin)</span>}
+                  <CircleUser className="h-4.5 w-4.5" />
+                  My Profile
                 </button>
                 <button type="button" onClick={handleLogout} className="grid h-9 w-9 place-items-center rounded-lg border border-neon-cyan/[0.08] text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100">
                   <LogOut className="h-4 w-4" />
@@ -1185,7 +1185,7 @@ export default function App() {
               <div className="rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</div>
             )}
 
-            {user && <ProfileSetupGuide profile={myProfile} onRequestJoin={() => setShowRequestForm(true)} />}
+            {user && <ProfileSetupGuide profile={myProfile} onRequestJoin={() => setShowRequestForm(true)} isAdmin={isAdmin} />}
 
             {/* Stats */}
             <section className="grid gap-3 grid-cols-2 lg:grid-cols-4">

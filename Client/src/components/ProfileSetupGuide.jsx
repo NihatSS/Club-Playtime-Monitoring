@@ -4,8 +4,9 @@ import { CheckCircle, Circle, ClipboardList, Clock, UserPlus } from 'lucide-reac
  * Phase 9: onboarding checklist for signed-in users who aren't fully set up.
  * Progress is derived from the profile data — no separate state to maintain.
  */
-export default function ProfileSetupGuide({ profile, onRequestJoin }) {
-  if (!profile) return null;
+export default function ProfileSetupGuide({ profile, onRequestJoin, isAdmin = false }) {
+  // Admins don't request to join the tracker — no onboarding needed.
+  if (isAdmin || !profile) return null;
 
   const hasAccount = true; // The guide only renders for signed-in users.
   const hasRoblox = !!profile.player;

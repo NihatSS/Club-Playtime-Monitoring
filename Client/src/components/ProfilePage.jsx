@@ -10,6 +10,8 @@ import {
   Gamepad2,
   KeyRound,
   Link2,
+  Pencil,
+  Save,
   ShieldCheck,
   Trash2,
   Trophy,
@@ -72,6 +74,11 @@ export default function ProfilePage({ onBack }) {
   const [pwEditing, setPwEditing] = useState(false);
   const [showPw, setShowPw] = useState(false);
 
+  // Game info state (Roblox username / Roblox ID / Discord ID)
+  const [gameEditing, setGameEditing] = useState(false);
+  const [gameBusy, setGameBusy] = useState(false);
+  const [gameForm, setGameForm] = useState({ robloxUsername: '', robloxUserId: '', discordUserId: '' });
+
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -119,6 +126,36 @@ export default function ProfilePage({ onBack }) {
       setError(err.message);
     } finally {
       setDiscordBusy(false);
+    }
+  }
+
+  function startGameEditing() {
+    setGameForm({
+      robloxUsername: profile.robloxUsername ?? '',
+      robloxUserId: profile.robloxUserId != null ? String(profile.robloxUserId) : '',
+      discordUserId: profile.discordUserId ?? ''
+    });
+    setGameEditing(true);
+  }
+
+  async function handleGameInfoSave(event) {
+    event.preventDefault();
+    setGameBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await api.updateGameInfo({
+        robloxUsername: gameForm.robloxUsername.trim(),
+        robloxUserId: gameForm.robloxUserId.trim() ? Number(gameForm.robloxUserId.trim()) : null,
+        discordUserId: gameForm.discordUserId.trim()
+      });
+      setNotice(result.message ?? 'Game info saved.');
+      setGameEditing(false);
+      await loadProfile();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGameBusy(false);
     }
   }
 
@@ -287,6 +324,116 @@ export default function ProfilePage({ onBack }) {
           )}
         </Section>
 
+        {/* ─── GAME INFO ─── */}
+        <Section icon={Gamepad2} title="Game Info" accent="text-neon-cyan">
+          <p className="mb-3 text-xs text-mist">
+            Your game details. This is what your join request will use — keep it up to date so admins can add you to the tracker.
+          </p>
+          {gameEditing ? (
+            <form onSubmit={handleGameInfoSave} className="space-y-3">
+              <div>
+                <label htmlFor="gi-username" className="mb-1 block text-xs font-medium text-zinc-400">Roblox username</label>
+                <input
+                  id="gi-username"
+                  type="text"
+                  value={gameForm.robloxUsername}
+                  onChange={(e) => setGameForm((c) => ({ ...c, robloxUsername: e.target.value }))}
+                  placeholder="Your Roblox username"
+                  className="w-full min-h-10 rounded-lg border border-line bg-ink px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
+                  maxLength={100}
+                />
+              </div>
+              <div>
+                <label htmlFor="gi-userid" className="mb-1 block text-xs font-medium text-zinc-400">Roblox user ID</label>
+                <input
+                  id="gi-userid"
+                  type="text"
+                  inputMode="numeric"
+                  value={gameForm.robloxUserId}
+                  onChange={(e) => setGameForm((c) => ({ ...c, robloxUserId: e.target.value.replace(/[^0-9]/g, '') }))}
+                  placeholder="e.g. 2243793833"
+                  className="w-full min-h-10 rounded-lg border border-line bg-ink px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
+                />
+                <p className="mt-1 text-[11px] text-zinc-500">Find it on your Roblox profile page URL: roblox.com/users/&lt;id&gt;/profile</p>
+                {gameForm.robloxUserId ? (
+                  <a
+                    href={`https://www.roblox.com/users/${gameForm.robloxUserId}/profile`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-[11px] text-neon-cyan hover:text-neon-cyan/80"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Preview your profile
+                  </a>
+                ) : null}
+              </div>
+              <div>
+                <label htmlFor="gi-discord" className="mb-1 block text-xs font-medium text-zinc-400">Discord User ID (optional)</label>
+                <input
+                  id="gi-discord"
+                  type="text"
+                  inputMode="numeric"
+                  value={gameForm.discordUserId}
+                  onChange={(e) => setGameForm((c) => ({ ...c, discordUserId: e.target.value.replace(/\s/g, '') }))}
+                  placeholder="123456789012345678"
+                  className="w-full min-h-10 rounded-lg border border-line bg-ink px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
+                  maxLength={20}
+                />
+                <p className="mt-1 text-[11px] text-zinc-500">{DISCORD_COPY_HINT}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={gameBusy}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-neon-cyan px-4 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  {gameBusy ? 'Saving...' : 'Save game info'}
+                  </button>
+                <button
+                  type="button"
+                  onClick={() => setGameEditing(false)}
+                  className="inline-flex min-h-9 items-center rounded-lg border border-line px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <div className="divide-y divide-neon-cyan/10">
+                <InfoRow label="Roblox username" value={profile.robloxUsername || <span className="text-zinc-500">Not set</span>} />
+                <InfoRow label="Roblox user ID" value={profile.robloxUserId ?? <span className="text-zinc-500">Not set</span>} mono />
+                <InfoRow
+                  label="Discord ID"
+                  value={profile.discordUserId || <span className="text-zinc-500">Not set</span>}
+                  mono
+                  action={
+                    <button
+                      type="button"
+                      onClick={startGameEditing}
+                      className="text-zinc-500 transition hover:text-zinc-300"
+                      title="Edit game info"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  }
+                />
+              </div>
+              {!profile.player && (
+                <button
+                  type="button"
+                  onClick={startGameEditing}
+                  className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-4 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]"
+                >
+                  <Pencil className="h-4 w-4" />
+                  {profile.robloxUsername || profile.robloxUserId ? 'Edit game info' : 'Add your game info'}
+                </button>
+                )}
+              </>
+          )}
+        </Section>
+
         {/* ─── ROBLOX ─── */}
         <Section icon={Gamepad2} title="Roblox" accent="text-neon-cyan">
           {player ? (
@@ -331,9 +478,10 @@ export default function ProfilePage({ onBack }) {
           )}
         </Section>
 
-        {/* ─── DISCORD ─── */}
-        <Section icon={Link2} title="Discord" accent="text-neon-purple">
-          <div className="mb-3 flex items-center gap-2">
+        {/* ─── DISCORD ─── (covered by Game Info for tracker members) ─── */}
+        {!player && (
+          <Section icon={Link2} title="Discord" accent="text-neon-purple">
+            <div className="mb-3 flex items-center gap-2">
             {discordLinked ? (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
                 <CheckCircle className="h-3 w-3" />
@@ -406,7 +554,8 @@ export default function ProfilePage({ onBack }) {
           <p className="mt-3 text-xs text-mist">
             Linking Discord lets the bot's <span className="font-mono text-zinc-300">/playtime</span> command find your stats.
           </p>
-        </Section>
+          </Section>
+        )}
 
         {/* ─── TRACKER ─── */}
         <Section icon={Trophy} title="Tracker" accent="text-neon-amber">

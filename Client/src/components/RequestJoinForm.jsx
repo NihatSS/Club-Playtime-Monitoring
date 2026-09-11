@@ -124,9 +124,11 @@ export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDis
     if (!profile || myRequest || editing) return;
     setForm((prev) => ({
       ...prev,
-      robloxUsername: prev.robloxUsername || profile.player?.username || '',
-      robloxUserId: prev.robloxUserId || (profile.player ? String(profile.player.robloxUserId) : ''),
-      discordUserId: prev.discordUserId || profile.discordUserId || ''
+      robloxUsername: profile.robloxUsername || profile.player?.username || prev.robloxUsername,
+      robloxUserId: profile.robloxUserId != null
+        ? String(profile.robloxUserId)
+        : (profile.player ? String(profile.player.robloxUserId) : prev.robloxUserId),
+      discordUserId: profile.discordUserId || prev.discordUserId
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
@@ -305,6 +307,17 @@ export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDis
                 <AlertCircle className="h-4 w-4 shrink-0" />
               )}
               {result.message}
+            </div>
+          )}
+
+          {/* Signed-in: explain the profile connection */}
+          {profile && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-neon-cyan/20 bg-neon-cyan/[0.06] px-3 py-2.5 text-xs text-zinc-300">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neon-cyan" />
+              <span>
+                Using the game info from <button type="button" className="font-semibold text-neon-cyan underline underline-offset-2" onClick={() => { window.location.hash = 'profile'; onClose?.(); }}>your profile</button>.
+                {!profile.robloxUsername && !profile.robloxUserId && ' Add your Roblox username and ID there first — they will show up here automatically.'}
+              </span>
             </div>
           )}
 

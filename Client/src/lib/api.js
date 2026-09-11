@@ -143,6 +143,13 @@ export const api = {
       body: JSON.stringify({ discordUserId })
     }),
 
+  // Self-service game info (Roblox username/ID + Discord ID) on the profile
+  updateGameInfo: (body) =>
+    request('/api/profile/game-info', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+
   // Admin: user management (Phase 8)
   getUsers: () => request('/api/admin/users'),
   getUserDetail: (id) => request(`/api/admin/users/${id}`),

@@ -38,7 +38,9 @@ public sealed class ProfileController(
             Username = user.Username,
             Role = user.Role,
             CreatedAt = user.CreatedAt,
-            DiscordUserId = user.DiscordUserId
+            DiscordUserId = user.DiscordUserId,
+            RobloxUsername = user.Player?.Username ?? user.RobloxUsername,
+            RobloxUserId = user.Player?.RobloxUserId ?? user.RobloxUserId
         };
 
         if (user.PlayerId is not null)
@@ -150,6 +152,83 @@ public sealed class ProfileController(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return Ok(new { message = "Discord account linked.", linked = true, discordUserId });
+    }
+
+    /// <summary>
+    /// Save the game info the user fills in on their own profile: Roblox
+    /// username, Roblox user ID and Discord ID. This is what their join
+    /// request will use (Phase 10), and what admins see when reviewing.
+    /// </summary>
+    [HttpPost("game-info")]
+    public async Task<IActionResult> UpdateGameInfo(UpdateGameInfoRequest request, CancellationToken cancellationToken)
+    {
+        var currentUsername = User.Identity?.Name;
+        var user = await dbContext.Users
+            .Include(u => u.Player)
+            .FirstOrDefaultAsync(u => u.Username == currentUsername, cancellationToken);
+
+        if (user is null)
+        {
+            return Unauthorized(new { message = "User not found." });
+        }
+
+        var robloxUsername = (request.RobloxUsername ?? string.Empty).Trim();
+        var discordUserId = (request.DiscordUserId ?? string.Empty).Trim();
+
+        if (robloxUsername.Length > 100)
+        {
+            return BadRequest(new { message = "Roblox username must be 100 characters or fewer." });
+        }
+
+        if (discordUserId.Length > 0 && !IsDiscordUserId(discordUserId))
+        {
+            return BadRequest(new { message = "Discord User ID must contain 17 to 20 digits. Enable Discord Developer Mode and use Copy User ID." });
+        }
+
+        var robloxUserId = request.RobloxUserId;
+        if (robloxUserId is not null && robloxUserId <= 0)
+        {
+            return BadRequest(new { message = "Roblox user ID must be a positive number." });
+        }
+
+        // Keep the dedicated Discord link endpoint semantics: validate uniqueness.
+        if (discordUserId.Length > 0)
+        {
+            var takenByUser = await dbContext.Users
+                .AnyAsync(u => u.Id != user.Id && u.DiscordUserId == discordUserId, cancellationToken);
+            if (takenByUser)
+            {
+                return Conflict(new { message = "That Discord account is already linked to another website account." });
+            }
+
+            var takenByPlayer = await dbContext.Players
+                .AnyAsync(p => p.DiscordUserId == discordUserId && (user.PlayerId == null || p.Id != user.PlayerId), cancellationToken);
+            if (takenByPlayer)
+            {
+                return Conflict(new { message = "That Discord account is already linked to a different tracker player." });
+            }
+        }
+
+        // Users already linked to a tracker player keep the canonical values
+        // from that player; only the Discord ID remains editable there.
+        if (user.Player is not null)
+        {
+            user.DiscordUserId = discordUserId.Length == 0 ? null : discordUserId;
+            if (user.Player.DiscordUserId != user.DiscordUserId)
+            {
+                user.Player.DiscordUserId = user.DiscordUserId;
+                user.Player.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+        else
+        {
+            user.RobloxUsername = robloxUsername.Length == 0 ? null : robloxUsername;
+            user.RobloxUserId = robloxUserId;
+            user.DiscordUserId = discordUserId.Length == 0 ? null : discordUserId;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Ok(new { message = "Game info saved." });
     }
 
     private async Task<(int? weekly, int? total)> ComputeLeaderboardPositionsAsync(int playerId, CancellationToken cancellationToken)

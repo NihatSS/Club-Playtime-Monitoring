@@ -23,4 +23,13 @@ public sealed class User
 
     /// <summary>Discord user ID if the user has linked Discord (optional).</summary>
     public string? DiscordUserId { get; set; }
+
+    /// <summary>
+    /// Roblox username the user reports on their profile before they are
+    /// linked to a tracker player. Superseded by Player once linked.
+    /// </summary>
+    public string? RobloxUsername { get; set; }
+
+    /// <summary>Roblox user ID the user reports on their profile before tracker linking.</summary>
+    public long? RobloxUserId { get; set; }
 }

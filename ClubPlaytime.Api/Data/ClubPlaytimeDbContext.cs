@@ -58,6 +58,7 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
             entity.Property(user => user.PasswordHash).IsRequired();
             entity.Property(user => user.Role).HasMaxLength(10).HasDefaultValue("User");
             entity.Property(user => user.DiscordUserId).HasMaxLength(100);
+            entity.Property(user => user.RobloxUsername).HasMaxLength(100);
 
             // A tracker player can be claimed by at most one website account.
             entity.HasIndex(user => user.PlayerId).IsUnique();

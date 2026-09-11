@@ -14,6 +14,12 @@ public sealed class MyProfileResponse
     public DateTime CreatedAt { get; set; }
     public string? DiscordUserId { get; set; }
 
+    /// <summary>Self-reported Roblox username shown until a tracker player is linked.</summary>
+    public string? RobloxUsername { get; set; }
+
+    /// <summary>Self-reported Roblox user ID shown until a tracker player is linked.</summary>
+    public long? RobloxUserId { get; set; }
+
     public ProfilePlayerDto? Player { get; set; }
 
     public ProfileJoinRequestDto? JoinRequest { get; set; }
@@ -56,6 +62,22 @@ public sealed class ProfileJoinRequestDto
 public sealed class UpdateDiscordRequest
 {
     /// <summary>17-20 digit Discord snowflake, or null/empty to unlink.</summary>
+    [MaxLength(20)]
+    public string? DiscordUserId { get; set; }
+}
+
+/// <summary>
+/// Game info a user fills in on their own profile: Roblox username, Roblox
+/// user ID and Discord ID. Used to prefill their join request (Phase 10).
+/// </summary>
+public sealed class UpdateGameInfoRequest
+{
+    [MaxLength(100)]
+    public string? RobloxUsername { get; set; }
+
+    [Range(1, long.MaxValue)]
+    public long? RobloxUserId { get; set; }
+
     [MaxLength(20)]
     public string? DiscordUserId { get; set; }
 }
