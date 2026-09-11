@@ -161,7 +161,6 @@ To use SQL Server, set `Provider` to `SqlServer` and update the `SqlServer` conn
 - `GET /api/dashboard` - Get dashboard data
 - `GET /api/dashboard/leaderboard` - Get leaderboard (daily/weekly/monthly)
 - `GET /api/dashboard/leaderboard/weekly` - Get weekly leaderboard
-- `GET /api/export/playtime.csv` - Export playtime data
 
 ### Admin Role (requires admin authentication)
 - `POST /api/players` - Add a new player

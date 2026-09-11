@@ -1,4 +1,3 @@
-using System.Text;
 using ClubPlaytime.Api.DTOs;
 using ClubPlaytime.Api.Models;
 using ClubPlaytime.Api.Options;
@@ -33,6 +32,11 @@ public sealed class PlayerStatsService(
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var last30From = today.AddDays(-29);
         var weekFrom = today.AddDays(-6);
+
+        // Note: these two queries must stay sequential — they share one DbContext
+        // and EF Core does not allow concurrent operations on a single context.
+        // The client renders the panel instantly from the dashboard list data and
+        // only merges this response (chart + monthly stats) when it arrives.
         var dailyRows = await dailyPlaytimeRepository.GetRangeAsync(player.Id, last30From, today, cancellationToken);
         var recentActivity = await activityRepository.GetRecentForPlayerAsync(player.Id, 20, cancellationToken);
         var dailyByDate = dailyRows.ToDictionary(row => row.Date, row => row.PlaySeconds);
@@ -344,31 +348,6 @@ public sealed class PlayerStatsService(
             .ToList();
     }
 
-    public async Task<string> ExportCsvAsync(DateOnly? from, DateOnly? to, CancellationToken cancellationToken = default)
-    {
-        var players = await playerRepository.GetAllAsync(trackChanges: false, cancellationToken);
-        var startDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-29);
-        var endDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        var csv = new StringBuilder();
-        csv.AppendLine("Username,RobloxUserId,Date,PlaySeconds,Playtime");
-
-        foreach (var player in players)
-        {
-            var rows = await dailyPlaytimeRepository.GetRangeAsync(player.Id, startDate, endDate, cancellationToken);
-            foreach (var row in rows)
-            {
-                csv.Append(Csv(player.Username)).Append(',')
-                    .Append(player.RobloxUserId).Append(',')
-                    .Append(row.Date.ToString("yyyy-MM-dd")).Append(',')
-                    .Append(row.PlaySeconds).Append(',')
-                    .Append(Csv(FormatDuration(row.PlaySeconds)))
-                    .AppendLine();
-            }
-        }
-
-        return csv.ToString();
-    }
-
     private PlayerDto ToPlayerDto(Player player, long todayPlaySeconds)
     {
         return new PlayerDto(
@@ -408,18 +387,5 @@ public sealed class PlayerStatsService(
         }
 
         return player.IsOnline ? "Online" : "Offline";
-    }
-
-    private static string Csv(string value)
-    {
-        return $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-    }
-
-    private static string FormatDuration(long totalSeconds)
-    {
-        var totalMinutes = Math.Max(0, totalSeconds) / 60;
-        var hours = totalMinutes / 60;
-        var minutes = totalMinutes % 60;
-        return hours > 0 ? $"{hours}h {minutes:00}m" : $"{minutes}m";
     }
 }

@@ -10,7 +10,6 @@ import {
   CircleUser,
   Clock,
   Copy,
-  Download,
   ExternalLink,
   Gamepad2,
   Globe,
@@ -347,7 +346,7 @@ function PlayerCard({ player, onSelect, selected, rank }) {
   return (
     <button
       type="button"
-      onClick={() => onSelect(player.id)}
+      onClick={() => onSelect(player)}
       className={`group rounded-xl border p-4 text-left transition ${
         style
           ? `${style.bg} ${style.border}`
@@ -460,7 +459,7 @@ function PlayersTable({ players, selectedId, onSelect, sortBy, sortDirection, on
               return (
                 <tr
                   key={player.id}
-                  onClick={() => onSelect(player.id)}
+                  onClick={() => onSelect(player)}
                   className={`cursor-pointer transition ${
                     style
                       ? `${style.bg}`
@@ -871,6 +870,8 @@ export default function App() {
 
   // Hash routing: #/profile shows the profile page.
   const [route, setRoute] = useState(() => window.location.hash.replace(/^#\/?/, ''));
+  const isAdmin = user?.role === 'Admin';
+
   useEffect(() => {
     function onHashChange() {
       setRoute(window.location.hash.replace(/^#\/?/, ''));
@@ -887,7 +888,15 @@ export default function App() {
   const headerAvatarUrl = myProfile?.player?.avatarUrl ?? null;
 
   useEffect(() => {
-    setOnAuthExpired(() => { setUser(null); setShowAuth(false); });
+    // Session expiry: same reset as an explicit logout, so auth-gated UI state
+    // (request form, admin-only panels) is cleared when the API reports 401.
+    setOnAuthExpired(() => {
+      setUser(null);
+      setShowAuth(false);
+      setShowRequestForm(false);
+      setSelectedId(null);
+      setDetails(null);
+    });
   }, []);
 
   // Load the signed-in user's profile for the setup guide and join form prefill.
@@ -911,8 +920,6 @@ export default function App() {
     loadMyProfile();
   }, [loadMyProfile, user?.username]);
 
-  const isAdmin = user?.role === 'Admin';
-
   const handleLogin = useCallback((data) => {
     setUser({ ...data, discordUserId: data.discordUserId ?? api.getDiscordUserId() });
     setShowAuth(false);
@@ -922,6 +929,12 @@ export default function App() {
     api.logout();
     setUser(null);
     setMyProfile(null);
+    // Authenticated-only UI must reset when the session ends, otherwise
+    // auth-gated panels (join-request form, selected player details) survive
+    // logout and stay visible on the logged-out screen.
+    setShowRequestForm(false);
+    setSelectedId(null);
+    setDetails(null);
     if (window.location.hash) window.location.hash = '';
   }, []);
 
@@ -957,8 +970,15 @@ export default function App() {
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   }, []);
 
-  const loadDetails = useCallback(async (id) => {
+  const loadDetails = useCallback(async (id, seedPlayer) => {
     if (!id) { setDetails(null); return; }
+    // Paint instantly from data the dashboard list already has (avatar, name,
+    // status, today/total playtime, weekly total from the leaderboard). The
+    // server response below only adds the chart and month stats on top, so the
+    // panel never waits on the network to show what the app already knows.
+    if (seedPlayer && seedPlayer.id === id) {
+      setDetails((prev) => (prev && prev.id === id ? { ...prev, ...seedPlayer } : { ...seedPlayer }));
+    }
     try { const player = await api.player(id); setDetails(player); setError(''); } catch (err) { setError(err.message); }
   }, []);
 
@@ -969,7 +989,6 @@ export default function App() {
   }, [loadDashboard, loadDetails, selectedId]);
 
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
-  useEffect(() => { loadDetails(selectedId); }, [loadDetails, selectedId]);
 
   const livePlayers = useMemo(() => {
     if (!lastRefreshAt || players.length === 0) return players;
@@ -1032,9 +1051,18 @@ export default function App() {
     setSortDirection(field === 'username' ? 'asc' : 'desc');
   }
 
+  // Selecting a player seeds the details panel from the already-loaded list
+  // (plus the weekly total from the leaderboard) and fetches only what is
+  // missing — one request instead of the previous duplicate pair.
+  function selectPlayer(player) {
+    setSelectedId(player.id);
+    const weekly = leaderboard.find((l) => l.playerId === player.id)?.weeklyPlaySeconds;
+    loadDetails(player.id, weekly != null ? { ...player, weeklyPlaySeconds: weekly } : player);
+  }
+
   async function addPlayer(body) {
     setBusy(true);
-    try { const c = await api.addPlayer(body); await loadDashboard(true); setSelectedId(c.id); setError(''); } catch (err) { setError(err.message); } finally { setBusy(false); }
+    try { const c = await api.addPlayer(body); await loadDashboard(true); setSelectedId(c.id); loadDetails(c.id, c); setError(''); } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
 
   async function runCheckNow() {
@@ -1123,11 +1151,6 @@ export default function App() {
             )}
 
             {isAdmin && <JoinRequestsDropdown onApproved={() => { loadDashboard(true); if (selectedId) loadDetails(selectedId); }} />}
-
-            <button type="button" onClick={() => api.downloadCsv()} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]">
-              <Download className="h-4 w-4" />
-              CSV
-            </button>
 
             {isAdmin && (
               <button type="button" onClick={runCheckNow} disabled={checking} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-60">
@@ -1297,14 +1320,14 @@ export default function App() {
                   {view === 'cards' ? (
                     <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                       {pagePlayers.map((player, i) => (
-                        <PlayerCard key={player.id} player={player} onSelect={setSelectedId} selected={selectedId === player.id} rank={pageStart + i + 1} />
+                        <PlayerCard key={player.id} player={player} onSelect={selectPlayer} selected={selectedId === player.id} rank={pageStart + i + 1} />
                       ))}
                       {!loading && filteredPlayers.length === 0 && (
                         <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a] p-6 text-sm text-mist">No players found</div>
                       )}
                     </section>
                   ) : (
-                    <PlayersTable players={pagePlayers} selectedId={selectedId} onSelect={setSelectedId} sortBy={sortBy} sortDirection={sortDirection} onSort={updateSort} startIndex={pageStart} />
+                    <PlayersTable players={pagePlayers} selectedId={selectedId} onSelect={selectPlayer} sortBy={sortBy} sortDirection={sortDirection} onSort={updateSort} startIndex={pageStart} />
                   )}
 
                   {/* Pagination */}

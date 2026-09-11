@@ -24,7 +24,8 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
         var username = (request.RobloxUsername ?? string.Empty).Trim();
         var discordUserId = (request.DiscordUserId ?? string.Empty).Trim();
 
-        if (!IsDiscordUserId(discordUserId))
+        // Discord ID is optional: only validate the format when one is supplied.
+        if (discordUserId.Length > 0 && !IsDiscordUserId(discordUserId))
         {
             return BadRequest(new { message = "Discord User ID must contain 17 to 20 digits. Enable Discord Developer Mode and use Copy User ID." });
         }
@@ -74,10 +75,11 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
             return Conflict(new { message = "This Roblox username is already in use." });
         }
 
-        var discordIdInUse = await dbContext.JoinRequests
-                .AnyAsync(r => r.Status == "Pending" && r.DiscordUserId == discordUserId)
-            || await dbContext.Players
-                .AnyAsync(p => p.DiscordUserId == discordUserId);
+        var discordIdInUse = discordUserId.Length > 0 && (
+                await dbContext.JoinRequests
+                    .AnyAsync(r => r.Status == "Pending" && r.DiscordUserId == discordUserId)
+                || await dbContext.Players
+                    .AnyAsync(p => p.DiscordUserId == discordUserId));
 
         if (discordIdInUse)
         {
@@ -208,7 +210,8 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
         var username = (request.RobloxUsername ?? string.Empty).Trim();
         var discordUserId = (request.DiscordUserId ?? string.Empty).Trim();
 
-        if (!IsDiscordUserId(discordUserId))
+        // Discord ID is optional: only validate the format when one is supplied.
+        if (discordUserId.Length > 0 && !IsDiscordUserId(discordUserId))
         {
             return BadRequest(new { message = "Discord User ID must contain 17 to 20 digits. Enable Discord Developer Mode and use Copy User ID." });
         }
@@ -223,10 +226,11 @@ public sealed class JoinRequestController(ClubPlaytimeDbContext dbContext, IPlay
             return Conflict(new { message = "This Roblox username is already in use." });
         }
 
-        var discordIdInUse = await dbContext.JoinRequests
-                .AnyAsync(r => r.Id != id && r.Status == "Pending" && r.DiscordUserId == discordUserId)
-            || await dbContext.Players
-                .AnyAsync(p => p.DiscordUserId == discordUserId);
+        var discordIdInUse = discordUserId.Length > 0 && (
+                await dbContext.JoinRequests
+                    .AnyAsync(r => r.Id != id && r.Status == "Pending" && r.DiscordUserId == discordUserId)
+                || await dbContext.Players
+                    .AnyAsync(p => p.DiscordUserId == discordUserId));
 
         if (discordIdInUse)
         {

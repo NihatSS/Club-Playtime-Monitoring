@@ -92,33 +92,6 @@ async function request(path, options = {}) {
   return response.json();
 }
 
-async function downloadCsv(path) {
-  const token = getToken();
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE}${path}`, { headers });
-
-  if (!response.ok) {
-    throw new Error(`Export failed with ${response.status}`);
-  }
-
-  const blob = await response.blob();
-  const disposition = response.headers.get('Content-Disposition');
-  const filename = disposition?.match(/filename=(.+)/)?.[1] ?? 'export.csv';
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
 export const api = {
   // Auth
   login: (username, password) =>
@@ -205,9 +178,6 @@ export const api = {
   getJoinRequests: (status) => request(`/api/joinrequest${status ? `?status=${status}` : ''}`),
   reviewJoinRequest: (id, status) => request(`/api/joinrequest/${id}/review`, { method: 'PUT', body: JSON.stringify({ status }) }),
   deleteJoinRequest: (id) => request(`/api/joinrequest/${id}`, { method: 'DELETE' }),
-
-  // CSV
-  downloadCsv: () => downloadCsv('/api/export/playtime.csv'),
 
   // Helpers
   isLoggedIn,

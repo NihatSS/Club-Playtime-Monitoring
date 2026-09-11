@@ -235,7 +235,7 @@ export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDis
 
           <div className="mt-2 grid gap-1 text-sm text-mist">
             <div>Roblox ID: <span className="text-zinc-300">{myRequest.robloxUserId}</span></div>
-            <div>Discord ID: <span className="text-zinc-300">{myRequest.discordUserId}</span></div>
+            <div>Discord ID: <span className="text-zinc-300">{myRequest.discordUserId || 'Not provided'}</span></div>
             <div>Club: <span className="text-zinc-300">{myRequest.club || 'None'}</span></div>
             {myRequest.note && <div>Note: <span className="text-zinc-300">{myRequest.note}</span></div>}
             <div>Submitted: <span className="text-zinc-300">{new Date(myRequest.createdAt).toLocaleString()}</span></div>
@@ -366,7 +366,7 @@ export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDis
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="rj-discord" className="block text-xs font-medium text-zinc-400 mb-1">
-                  Discord User ID *
+                  Discord User ID (optional)
                 </label>
                 <input
                   id="rj-discord"
@@ -375,11 +375,9 @@ export default function RequestJoinForm({ onClose, onMyRequestChange, defaultDis
                   placeholder="123456789012345678"
                   className="w-full min-h-10 rounded-md border border-line bg-ink px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
                   inputMode="numeric"
-                  required
-                  minLength={17}
                   maxLength={20}
                 />
-                <p className="mt-1 text-[11px] text-zinc-500">Use Copy User ID in Discord Developer Mode, not your username.</p>
+                <p className="mt-1 text-[11px] text-zinc-500">Optional — you can add or link your Discord later from your profile. If provided, use Copy User ID in Discord Developer Mode.</p>
               </div>
               <div>
                 <label htmlFor="rj-club" className="block text-xs font-medium text-zinc-400 mb-1">

@@ -10,8 +10,10 @@ public sealed class SubmitJoinRequest
     [Required]
     public long RobloxUserId { get; set; }
 
-    [Required, MaxLength(100)]
-    public string DiscordUserId { get; set; } = string.Empty;
+    // Optional: a join request can be submitted without a Discord account.
+    // The user can link one later from their profile.
+    [MaxLength(100)]
+    public string? DiscordUserId { get; set; }
 
     [Required]
     public string Club { get; set; } = "PIH";
@@ -28,8 +30,9 @@ public sealed class UpdateJoinRequest
     [Required]
     public long RobloxUserId { get; set; }
 
-    [Required, MaxLength(100)]
-    public string DiscordUserId { get; set; } = string.Empty;
+    // Optional: a join request can be saved without a Discord account.
+    [MaxLength(100)]
+    public string? DiscordUserId { get; set; }
 
     [Required]
     public string Club { get; set; } = "PIH";

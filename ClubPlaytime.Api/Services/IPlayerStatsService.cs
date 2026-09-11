@@ -29,5 +29,4 @@ public interface IPlayerStatsService
     /// <summary>Bulk sync Discord IDs to players based on Roblox user ID.</summary>
     Task<SyncResult> SyncDiscordIdsAsync(List<DiscordIdMapping> mappings, CancellationToken cancellationToken = default);
 
-    Task<string> ExportCsvAsync(DateOnly? from, DateOnly? to, CancellationToken cancellationToken = default);
 }
