@@ -891,8 +891,9 @@ export default function App() {
   }, []);
 
   // Load the signed-in user's profile for the setup guide and join form prefill.
+  const [myProfileLoaded, setMyProfileLoaded] = useState(false);
   const loadMyProfile = useCallback(async () => {
-    if (!api.isLoggedIn()) { setMyProfile(null); return; }
+    if (!api.isLoggedIn()) { setMyProfile(null); setMyProfileLoaded(true); return; }
     try {
       const data = await api.myProfile();
       setMyProfile(data);
@@ -901,6 +902,8 @@ export default function App() {
       if (data?.id && !api.getUserId()) localStorage.setItem('userId', String(data.id));
     } catch {
       setMyProfile(null);
+    } finally {
+      setMyProfileLoaded(true);
     }
   }, []);
 
@@ -1086,7 +1089,7 @@ export default function App() {
         onSignIn={() => setShowAuth(true)}
         onLogout={handleLogout}
       >
-        {!isAdmin && (
+        {!isAdmin && user && myProfileLoaded && !myProfile?.player && (
               <button
                 type="button"
                 onClick={() => setShowRequestForm(!showRequestForm)}
