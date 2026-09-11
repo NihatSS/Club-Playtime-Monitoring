@@ -39,8 +39,7 @@ import {
 } from 'recharts';
 import { api, setOnAuthExpired } from './lib/api';
 import { formatDateTime, formatDuration, shortDate } from './lib/format';
-import LoginPage from './components/LoginPage';
-import RegisterPage from './components/RegisterPage';
+import AuthPage from './components/AuthPage';
 import RequestJoinForm from './components/RequestJoinForm';
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -863,21 +862,19 @@ export default function App() {
     if (token && role && username) return { token, role, username, discordUserId };
     return null;
   });
-  const [showLogin, setShowLogin] = useState(false);
-  const [showRegister, setShowRegister] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [myJoinRequest, setMyJoinRequest] = useState(null);
 
   useEffect(() => {
-    setOnAuthExpired(() => { setUser(null); setShowLogin(false); });
+    setOnAuthExpired(() => { setUser(null); setShowAuth(false); });
   }, []);
 
   const isAdmin = user?.role === 'Admin';
 
   const handleLogin = useCallback((data) => {
     setUser({ ...data, discordUserId: data.discordUserId ?? api.getDiscordUserId() });
-    setShowLogin(false);
-    setShowRegister(false);
+    setShowAuth(false);
   }, []);
   const handleLogout = useCallback(() => { api.logout(); setUser(null); }, []);
 
@@ -1009,8 +1006,7 @@ export default function App() {
     try { await api.updateClub(id, club); await loadDetails(id); await loadDashboard(true); setError(''); } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
 
-  if (showLogin) return <LoginPage onLogin={handleLogin} />;
-  if (showRegister) return <RegisterPage onLogin={handleLogin} onBack={() => setShowRegister(false)} />;
+  if (showAuth) return <AuthPage onLogin={handleLogin} />;
 
   return (
     <div className="min-h-screen bg-[#050510] text-zinc-50">
@@ -1088,13 +1084,9 @@ export default function App() {
               </div>
             ) : (
               <>
-                <button type="button" onClick={() => setShowRegister(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]">
-                  <UserPlus className="h-4 w-4" />
-                  Register
-                </button>
-                <button type="button" onClick={() => setShowLogin(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80">
+                <button type="button" onClick={() => setShowAuth(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80">
                   <LogIn className="h-4 w-4" />
-                  Login
+                  Sign In
                 </button>
               </>
             )}

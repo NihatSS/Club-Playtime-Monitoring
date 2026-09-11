@@ -88,6 +88,19 @@ public sealed class DiscordBotService : IHostedService
             _logger.LogInformation(
                 "Using ClubPlaytime API at {EffectiveBaseUrl} (config value: {ConfiguredValue})",
                 apiClient.EffectiveBaseUrl, string.IsNullOrWhiteSpace(apiBaseUrl) ? "<empty>" : apiBaseUrl);
+
+            // *.railway.app domains are tied to a single Railway service; when that
+            // service is renamed or deleted the domain dies and every API call 404s
+            // at the platform edge with "Application not found". Prefer a custom
+            // domain (e.g. https://rrplaytimetracker.online/api) over a railway.app one.
+            if (apiClient.EffectiveBaseUrl?.Host.EndsWith(".railway.app", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                _logger.LogWarning(
+                    "Api:BaseUrl uses a temporary *.railway.app host ({Host}). These die when the Railway service is renamed or deleted, " +
+                    "which makes every API call 404 at the platform edge ('Application not found') and the bot report every player as not in tracker. " +
+                    "Use the API's custom domain instead (e.g. https://rrplaytimetracker.online/api).",
+                    apiClient.EffectiveBaseUrl.Host);
+            }
         }
 
         _client.Log += OnLogAsync;

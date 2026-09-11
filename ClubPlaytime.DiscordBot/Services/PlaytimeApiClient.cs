@@ -56,28 +56,83 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            try
+            using var response = await SendAsync(path, cancellationToken);
+            if (response.IsSuccessStatusCode)
             {
-                return await httpClient.GetFromJsonAsync<T>(path, cancellationToken);
+                return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken);
             }
-            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
+                // Read a bounded chunk of the body so platform-edge 404s can be told
+                // apart from the API's own "not found" answers. A hosting platform's
+                // edge router (e.g. Railway's {\"message\":\"Application not found\"}
+                // when the service/domain no longer exists) is an outage, not a
+                // "not in tracker" answer.
+                var body = await ReadBodyAsync(response, cancellationToken);
+                if (body.Contains("Application not found", StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogError(
+                        "Tracker API host {BaseUrl} does not exist (hosting platform edge 404 'Application not found') for {Path} — the configured Api:BaseUrl is stale; treating as outage",
+                        httpClient.BaseAddress, path);
+                    throw new ApiUnavailableException(
+                        $"The playtime tracker API at {httpClient.BaseAddress} no longer exists (hosting platform reported 'Application not found'). The bot's Api:BaseUrl is likely stale.",
+                        new HttpRequestException("404 'Application not found' from hosting platform edge"));
+                }
+
                 // Genuine "not found" — never retry, return null so callers show "not in tracker".
                 logger.LogInformation("Tracker API returned 404 for {BaseUrl}{Path}", httpClient.BaseAddress, path);
                 return null;
             }
-            catch (Exception ex)
+
+            lastException = new HttpRequestException($"API returned {(int)response.StatusCode} ({response.StatusCode}) for {path}");
+
+            // 5xx and 429 are transient — retry like connection failures below.
+            var isTransientStatus = (int)response.StatusCode >= 500
+                || response.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
+            if (!isTransientStatus || attempt == maxAttempts)
             {
-                if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
+                break;
+            }
 
+            var delay = TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt - 1));
+            logger.LogWarning(
+                "Transient failure fetching {Path} from {BaseUrl} (attempt {Attempt}/{MaxAttempts}); retrying in {DelayMs}ms",
+                path, httpClient.BaseAddress, attempt, maxAttempts, (int)delay.TotalMilliseconds);
+            try
+            {
+                await Task.Delay(delay, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+        }
+
+        logger.LogError(lastException, "Failed to fetch {Path} from {BaseUrl} after {Attempts} attempts",
+            path, httpClient.BaseAddress, maxAttempts);
+        throw new ApiUnavailableException(
+            $"The playtime tracker API at {httpClient.BaseAddress} could not be reached.",
+            lastException ?? new HttpRequestException("API request failed."));
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(string path, CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 3;
+        Exception? lastException = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await httpClient.GetAsync(path, cancellationToken);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
+                && !(ex is OperationCanceledException && cancellationToken.IsCancellationRequested))
+            {
+                // Connection failure or timeout — transient, retry with backoff.
                 lastException = ex;
-                var isTransient = ex is HttpRequestException
-                    || ex is TaskCanceledException; // request timeout
-
-                if (!isTransient || attempt == maxAttempts)
+                if (attempt == maxAttempts)
                 {
                     break;
                 }
@@ -86,7 +141,6 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
                 logger.LogWarning(ex,
                     "Transient failure fetching {Path} from {BaseUrl} (attempt {Attempt}/{MaxAttempts}); retrying in {DelayMs}ms",
                     path, httpClient.BaseAddress, attempt, maxAttempts, (int)delay.TotalMilliseconds);
-
                 try
                 {
                     await Task.Delay(delay, cancellationToken);
@@ -98,11 +152,20 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
             }
         }
 
-        logger.LogError(lastException, "Failed to fetch {Path} from {BaseUrl} after {Attempts} attempts",
-            path, httpClient.BaseAddress, maxAttempts);
-        throw new ApiUnavailableException(
-            $"The playtime tracker API at {httpClient.BaseAddress} could not be reached.",
-            lastException ?? new HttpRequestException("API request failed."));
+        throw lastException ?? new HttpRequestException($"Request to {path} failed.");
+    }
+
+    private static async Task<string> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            return body.Length <= 512 ? body : body[..512];
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 }
 
