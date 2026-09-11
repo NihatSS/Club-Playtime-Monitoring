@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { formatDateTime } from '../lib/format';
+import Header from './Header';
 
 function RoleBadge({ role }) {
   const isAdmin = role === 'Admin';
@@ -303,7 +304,7 @@ function EditUserForm({ user, onSaved, onDone }) {
   );
 }
 
-export default function AdminUsersPage({ onBack }) {
+export default function AdminUsersPage({ onBack, user, avatarUrl, isAdmin, onLogout }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -351,8 +352,9 @@ export default function AdminUsersPage({ onBack }) {
   const editingUser = detail ?? users.find((u) => u.id === editingId) ?? null;
 
   return (
-    <div className="min-h-screen bg-[#050510] px-5 py-6 text-zinc-50">
-      <div className="mx-auto max-w-4xl space-y-5">
+    <div className="min-h-screen bg-[#050510] text-zinc-50">
+      <Header user={user} avatarUrl={avatarUrl} isAdmin={isAdmin} onLogout={onLogout} />
+      <div className="mx-auto max-w-4xl space-y-5 px-5 py-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <button

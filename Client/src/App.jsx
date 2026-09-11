@@ -15,12 +15,9 @@ import {
   Gamepad2,
   Globe,
   LayoutGrid,
-  LogIn,
-  LogOut,
   Play,
   RefreshCw,
   Search,
-  Shield,
   Table2,
   Trash2,
   Trophy,
@@ -41,6 +38,7 @@ import {
 import { api, setOnAuthExpired } from './lib/api';
 import { formatDateTime, formatDuration, shortDate } from './lib/format';
 import AuthPage from './components/AuthPage';
+import Header from './components/Header';
 import ProfilePage from './components/ProfilePage';
 import ProfileSetupGuide from './components/ProfileSetupGuide';
 import AdminUsersPage from './components/AdminUsersPage';
@@ -885,6 +883,9 @@ export default function App() {
   const showProfilePage = showProfile;
   const showAdminUsers = route === 'admin-users' && isAdmin;
 
+  // The signed-in user's Roblox avatar for the circular account button.
+  const headerAvatarUrl = myProfile?.player?.avatarUrl ?? null;
+
   useEffect(() => {
     setOnAuthExpired(() => { setUser(null); setShowAuth(false); });
   }, []);
@@ -1055,6 +1056,9 @@ export default function App() {
     return (
       <ProfilePage
         user={user}
+        avatarUrl={headerAvatarUrl}
+        isAdmin={isAdmin}
+        onLogout={handleLogout}
         onBack={() => { window.location.hash = ''; }}
       />
     );
@@ -1063,6 +1067,10 @@ export default function App() {
   if (showAdminUsers) {
     return (
       <AdminUsersPage
+        user={user}
+        avatarUrl={headerAvatarUrl}
+        isAdmin={isAdmin}
+        onLogout={handleLogout}
         onBack={() => { window.location.hash = ''; }}
       />
     );
@@ -1070,21 +1078,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#050510] text-zinc-50">
-      {/* ─── Header ─── */}
-      <header className="sticky top-0 z-20 border-b border-neon-cyan/[0.08] bg-[#050510]/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-neon-cyan text-zinc-950">
-              <Gamepad2 className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold tracking-tight text-zinc-50">Club Playtime</h1>
-              <div className="text-[11px] text-mist">Racket Rivals tracker</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {!isAdmin && (
+      {/* ─── Global header (shared) ─── */}
+      <Header
+        user={user}
+        avatarUrl={headerAvatarUrl}
+        isAdmin={isAdmin}
+        onSignIn={() => setShowAuth(true)}
+        onLogout={handleLogout}
+      >
+        {!isAdmin && (
               <button
                 type="button"
                 onClick={() => setShowRequestForm(!showRequestForm)}
@@ -1125,45 +1127,12 @@ export default function App() {
             </button>
 
             {isAdmin && (
-              <button type="button" onClick={() => { window.location.hash = 'admin-users'; }} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]" title="Manage user accounts">
-                <Users className="h-4 w-4" />
-                Users
-              </button>
-            )}
-
-            {isAdmin && (
               <button type="button" onClick={runCheckNow} disabled={checking} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-60">
                 <RefreshCw className={`h-4 w-4 ${checking ? 'animate-spin' : ''}`} />
                 Check Now
               </button>
             )}
-
-            {user ? (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { window.location.hash = 'profile'; }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-neon-cyan/40 bg-neon-cyan/10 px-3.5 py-2 text-sm font-semibold text-neon-cyan shadow-[0_0_12px_rgba(0,229,255,0.15)] transition hover:bg-neon-cyan/20 hover:shadow-[0_0_18px_rgba(0,229,255,0.3)]"
-                  title="Go to my profile"
-                >
-                  <CircleUser className="h-4.5 w-4.5" />
-                  My Profile
-                </button>
-                <button type="button" onClick={handleLogout} className="grid h-9 w-9 place-items-center rounded-lg border border-neon-cyan/[0.08] text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100">
-                  <LogOut className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <>
-                <button type="button" onClick={() => setShowAuth(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80">
-                  <LogIn className="h-4 w-4" />
-                  Sign In
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+      </Header>
 
       {showRequestForm && (
         <div className="mx-auto max-w-[1400px] px-5 pt-4">

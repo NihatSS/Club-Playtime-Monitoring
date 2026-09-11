@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { formatDateTime, formatDuration } from '../lib/format';
+import Header from './Header';
 
 const DISCORD_COPY_HINT =
   "Use Discord's Developer Mode, then right-click your profile and choose Copy User ID.";
@@ -57,7 +58,7 @@ function InfoRow({ label, value, mono = false, action = null }) {
   );
 }
 
-export default function ProfilePage({ onBack }) {
+export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -186,16 +187,18 @@ export default function ProfilePage({ onBack }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050510] px-5 py-8 text-zinc-50">
-        <div className="mx-auto max-w-3xl text-sm text-mist">Loading profile...</div>
+      <div className="min-h-screen bg-[#050510] text-zinc-50">
+        <Header user={user} avatarUrl={avatarUrl} isAdmin={isAdmin} onLogout={onLogout} />
+        <div className="mx-auto max-w-3xl px-5 py-8 text-sm text-mist">Loading profile...</div>
       </div>
     );
   }
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-[#050510] px-5 py-8 text-zinc-50">
-        <div className="mx-auto max-w-3xl">
+      <div className="min-h-screen bg-[#050510] text-zinc-50">
+        <Header user={user} avatarUrl={avatarUrl} isAdmin={isAdmin} onLogout={onLogout} />
+        <div className="mx-auto max-w-3xl px-5 py-8">
           <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 text-sm text-mist hover:text-zinc-200 transition">
             <ArrowLeft className="h-4 w-4" /> Back to tracker
           </button>
@@ -210,8 +213,9 @@ export default function ProfilePage({ onBack }) {
   const discordLinked = !!profile.discordUserId;
 
   return (
-    <div className="min-h-screen bg-[#050510] px-5 py-6 text-zinc-50">
-      <div className="mx-auto max-w-3xl space-y-5">
+    <div className="min-h-screen bg-[#050510] text-zinc-50">
+      <Header user={user} avatarUrl={avatarUrl} isAdmin={isAdmin} onLogout={onLogout} />
+      <div className="mx-auto max-w-3xl space-y-5 px-5 py-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <button
