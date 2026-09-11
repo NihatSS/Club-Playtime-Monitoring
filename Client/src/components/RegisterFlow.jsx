@@ -159,7 +159,7 @@ export default function RegisterFlow({ onLogin, onSwitchToLogin }) {
         body.claimToken = verifyResult.claimToken;
       }
       const data = await api.register(body);
-      api.setAuth(data.token, data.role, data.username, data.discordUserId);
+      api.setAuth(data.token, data.role, data.username, data.discordUserId, data.id);
       onLogin(data);
     } catch (err) {
       setError(err.message);

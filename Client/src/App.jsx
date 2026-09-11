@@ -42,6 +42,7 @@ import { formatDateTime, formatDuration, shortDate } from './lib/format';
 import AuthPage from './components/AuthPage';
 import ProfilePage from './components/ProfilePage';
 import ProfileSetupGuide from './components/ProfileSetupGuide';
+import AdminUsersPage from './components/AdminUsersPage';
 import RequestJoinForm from './components/RequestJoinForm';
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -881,6 +882,7 @@ export default function App() {
 
   const showProfile = route === 'profile' && !!user;
   const showProfilePage = showProfile;
+  const showAdminUsers = route === 'admin-users' && isAdmin;
 
   useEffect(() => {
     setOnAuthExpired(() => { setUser(null); setShowAuth(false); });
@@ -893,6 +895,8 @@ export default function App() {
       const data = await api.myProfile();
       setMyProfile(data);
       if (data.joinRequest) setMyJoinRequest(data.joinRequest);
+      // Backfill the stored user id for sessions created before LoginResponse included it.
+      if (data?.id && !api.getUserId()) localStorage.setItem('userId', String(data.id));
     } catch {
       setMyProfile(null);
     }
@@ -1055,6 +1059,14 @@ export default function App() {
     );
   }
 
+  if (showAdminUsers) {
+    return (
+      <AdminUsersPage
+        onBack={() => { window.location.hash = ''; }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#050510] text-zinc-50">
       {/* ─── Header ─── */}
@@ -1110,6 +1122,13 @@ export default function App() {
               <Download className="h-4 w-4" />
               CSV
             </button>
+
+            {isAdmin && (
+              <button type="button" onClick={() => { window.location.hash = 'admin-users'; }} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]" title="Manage user accounts">
+                <Users className="h-4 w-4" />
+                Users
+              </button>
+            )}
 
             {isAdmin && (
               <button type="button" onClick={runCheckNow} disabled={checking} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-60">

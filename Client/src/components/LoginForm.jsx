@@ -16,7 +16,7 @@ export default function LoginForm({ onLogin, onSwitchToRegister }) {
 
     try {
       const data = await api.login(username, password);
-      api.setAuth(data.token, data.role, data.username, data.discordUserId);
+      api.setAuth(data.token, data.role, data.username, data.discordUserId, data.id);
       onLogin(data);
     } catch (err) {
       setError(err.message);

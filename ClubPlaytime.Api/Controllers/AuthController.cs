@@ -43,6 +43,7 @@ public sealed class AuthController(
 
         return Ok(new LoginResponse
         {
+            Id = user.Id,
             Token = token,
             Role = user.Role,
             Username = user.Username,
@@ -161,6 +162,7 @@ public sealed class AuthController(
 
         return Ok(new LoginResponse
         {
+            Id = user.Id,
             Token = token,
             Role = user.Role,
             Username = user.Username,

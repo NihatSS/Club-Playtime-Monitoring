@@ -16,6 +16,10 @@ function getDiscordUserId() {
   return localStorage.getItem('discordUserId');
 }
 
+function getUserId() {
+  return localStorage.getItem('userId');
+}
+
 function isLoggedIn() {
   return !!getToken();
 }
@@ -24,12 +28,14 @@ function isAdmin() {
   return getRole() === 'Admin';
 }
 
-function setAuth(token, role, username, discordUserId = null) {
+function setAuth(token, role, username, discordUserId = null, userId = null) {
   localStorage.setItem('token', token);
   localStorage.setItem('role', role);
   localStorage.setItem('username', username);
   if (discordUserId) localStorage.setItem('discordUserId', discordUserId);
   else localStorage.removeItem('discordUserId');
+  if (userId) localStorage.setItem('userId', String(userId));
+  else localStorage.removeItem('userId');
 }
 
 function clearAuth() {
@@ -37,6 +43,7 @@ function clearAuth() {
   localStorage.removeItem('role');
   localStorage.removeItem('username');
   localStorage.removeItem('discordUserId');
+  localStorage.removeItem('userId');
 }
 
 let onAuthExpired = null;
@@ -137,8 +144,12 @@ export const api = {
     }),
 
   // Admin: user management (Phase 8)
+  getUsers: () => request('/api/admin/users'),
   getUserDetail: (id) => request(`/api/admin/users/${id}`),
   updateUser: (id, body) => request(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  adminChangeUserPassword: (id, body) =>
+    request(`/api/admin/users/${id}/change-password`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteUser: (id) => request(`/api/admin/users/${id}`, { method: 'DELETE' }),
 
   changePassword: (body) =>
     request('/api/auth/change-password', {
@@ -197,6 +208,7 @@ export const api = {
   getRole,
   getUsername,
   getDiscordUserId,
+  getUserId,
   setAuth,
   clearAuth,
 };
