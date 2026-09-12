@@ -129,22 +129,26 @@ function ProfileMenu({ user, avatarUrl, isAdmin, onLogout }) {
 export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, children }) {
   return (
     <header className="sticky top-0 z-20 border-b border-neon-cyan/[0.08] bg-[#050510]/90 backdrop-blur-md">
-      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3">
-        <div className="flex items-center gap-4">
+      <div className="mx-auto grid max-w-[1400px] grid-cols-[1fr_auto_1fr] items-center gap-x-4 gap-y-2 px-5 py-3">
+        <div className="flex min-w-0 items-center justify-start">
           <button
             type="button"
             onClick={() => { window.location.hash = ''; }}
             className="flex items-center gap-3 text-left"
             title="Home"
           >
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-neon-cyan text-zinc-950">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-neon-cyan text-zinc-950">
               <Gamepad2 className="h-5 w-5" />
             </span>
-            <span>
+            <span className="hidden sm:block">
               <span className="block text-base font-bold tracking-tight text-zinc-50">Club Playtime</span>
               <span className="block text-[11px] text-mist">Racket Rivals tracker</span>
             </span>
           </button>
+        </div>
+
+        {/* Center: Tournaments navigation */}
+        <div className="flex items-center justify-center">
           <button
             type="button"
             onClick={() => { window.location.hash = 'tournaments'; }}
@@ -155,7 +159,7 @@ export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, c
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           {children}
           {user ? (
             <ProfileMenu user={user} avatarUrl={avatarUrl} isAdmin={isAdmin} onLogout={onLogout} />
