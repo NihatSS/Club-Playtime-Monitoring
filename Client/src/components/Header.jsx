@@ -1,17 +1,266 @@
 import { useEffect, useRef, useState } from 'react';
+import { api } from '../lib/api.js';
 import {
   Bell,
   ChevronDown,
   CircleUser,
+  Clock,
   Gamepad2,
   Home,
   LayoutGrid,
   LogIn,
   LogOut,
+  Megaphone,
   Shield,
+  Swords,
   Trophy,
   User
 } from 'lucide-react';
+
+const NOTIFICATIONS_SEEN_KEY = 'notificationsLastSeenAt';
+
+function relativeTime(iso, now = Date.now()) {
+  const diff = now - new Date(iso).getTime();
+  const past = diff >= 0;
+  const mins = Math.floor(Math.abs(diff) / 60000);
+  let text;
+  if (mins < 1) text = 'just now';
+  else if (mins < 60) text = `${mins}m`;
+  else if (mins < 1440) text = `${Math.floor(mins / 60)}h`;
+  else if (mins < 43200) text = `${Math.floor(mins / 1440)}d`;
+  else text = new Date(iso).toLocaleDateString();
+  if (!past) return text === 'just now' ? text : `in ${text}`;
+  return text === 'just now' ? text : `${text} ago`;
+}
+
+const TONE_STYLES = {
+  cyan: 'bg-neon-cyan/10 text-neon-cyan',
+  green: 'bg-emerald-400/10 text-emerald-300',
+  amber: 'bg-amber-400/10 text-amber-300',
+  zinc: 'bg-zinc-700/40 text-zinc-300'
+};
+
+/**
+ * Builds notification items from live tournament data: new tournaments,
+ * open/closing registration, starting soon, live brackets and recent winners.
+ * Returns { id, icon, tone, title, body, time, href } sorted newest first.
+ */
+export function buildNotifications(tournaments, now = Date.now()) {
+  const items = [];
+  const days = (ms) => ms / 86400000;
+
+  for (const t of tournaments ?? []) {
+    const href = `tournaments/${t.id}`;
+    const created = new Date(t.createdAt);
+    const startsAt = new Date(t.startsAt);
+    const deadline = new Date(t.registrationDeadline);
+
+    if (t.status === 'CANCELLED') continue;
+
+    if (t.status === 'COMPLETED') {
+      if (t.winnerName && t.completedAt && days(now - new Date(t.completedAt)) < 3) {
+        items.push({
+          id: `t-${t.id}-winner`,
+          icon: Trophy,
+          tone: 'amber',
+          title: `${t.winnerName} won "${t.name}"`,
+          body: 'Tournament finished — check the final bracket.',
+          time: t.completedAt,
+          href
+        });
+      }
+      continue;
+    }
+
+    if (t.status === 'IN_PROGRESS') {
+      items.push({
+        id: `t-${t.id}-live`,
+        icon: Swords,
+        tone: 'green',
+        title: `"${t.name}" is live`,
+        body: `${t.participantCount} participants — bracket in progress.`,
+        time: t.startsAt,
+        href
+      });
+      continue;
+    }
+
+    // Recently created tournament (any pre-game state).
+    if (days(now - created) < 7) {
+      items.push({
+        id: `t-${t.id}-new`,
+        icon: Megaphone,
+        tone: 'cyan',
+        title: `New tournament: ${t.name}`,
+        body: t.status === 'REGISTRATION_OPEN'
+          ? `${t.participantCount}/${t.maxParticipants} joined — register before it fills up.`
+          : t.prizeInfo ? `Prizes: ${t.prizeInfo}` : 'Take a look and sign up.',
+        time: t.createdAt,
+        href
+      });
+    }
+
+    if (t.status === 'REGISTRATION_OPEN' && deadline > now) {
+      const daysLeft = days(deadline - now);
+      items.push({
+        id: `t-${t.id}-reg`,
+        icon: Clock,
+        tone: daysLeft <= 1 ? 'amber' : 'zinc',
+        title: `Registration closes soon: ${t.name}`,
+        body: `${t.participantCount}/${t.maxParticipants} joined — closes ${relativeTime(t.registrationDeadline, now)}.`,
+        time: (deadline - now) < 86400000 ? t.registrationDeadline : t.createdAt,
+        href
+      });
+    }
+
+    if ((t.status === 'UPCOMING' || t.status === 'REGISTRATION_CLOSED') && startsAt > now && days(startsAt - now) < 3) {
+      items.push({
+        id: `t-${t.id}-start`,
+        icon: Gamepad2,
+        tone: 'cyan',
+        title: `"${t.name}" starts soon`,
+        body: `Begins ${relativeTime(t.startsAt, now)} — good luck!`,
+        time: t.startsAt,
+        href
+      });
+    }
+  }
+
+  return items
+    .sort((a, b) => new Date(b.time) - new Date(a.time))
+    .slice(0, 12);
+}
+
+function NotificationItem({ item, now, onNavigate }) {
+  const Icon = item.icon;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        window.location.hash = item.href;
+        onNavigate?.();
+      }}
+      className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-neon-cyan/[0.05]"
+    >
+      <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${TONE_STYLES[item.tone] ?? TONE_STYLES.zinc}`}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-[13px] font-semibold text-zinc-50">{item.title}</span>
+        <span className="mt-0.5 block text-xs leading-snug text-mist">{item.body}</span>
+        <span className="mt-1 block text-[10px] uppercase tracking-wider text-zinc-500">{relativeTime(item.time, now)}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Bell button + notifications dropdown, fed by live tournament data. */
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState([]);
+  const [seenAt, setSeenAt] = useState(() => Number(localStorage.getItem(NOTIFICATIONS_SEEN_KEY)) || 0);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.tournaments()
+      .then((data) => { if (!cancelled) setItems(buildNotifications(data)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocMouseDown(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  // Unread = something happened (or was created) after the last time the
+  // dropdown was opened. Future-scheduled items ("starts soon") don't keep
+  // the dot lit forever — only events that already occurred count.
+  const hasUnread = items.some((it) => {
+    const ts = new Date(it.time).getTime();
+    return ts <= now && ts > seenAt;
+  });
+  const now = Date.now();
+
+  function toggle() {
+    setOpen((o) => {
+      const next = !o;
+      if (next) {
+        const ts = Date.now();
+        localStorage.setItem(NOTIFICATIONS_SEEN_KEY, String(ts));
+        setSeenAt(ts);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Notifications"
+        className={`relative grid h-9 w-9 place-items-center rounded-lg transition ${
+          open ? 'bg-white/[0.06] text-zinc-50' : 'text-zinc-300 hover:bg-white/[0.04] hover:text-zinc-50'
+        }`}
+      >
+        <Bell className="h-[18px] w-[18px]" />
+        {hasUnread && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="animate-pop absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-neon-cyan/[0.12] bg-[#151519] shadow-2xl"
+        >
+          <div className="flex items-center justify-between px-4 py-3">
+            <span className="text-sm font-semibold text-zinc-50">Notifications</span>
+            {items.length > 0 && (
+              <span className="rounded-full bg-neon-cyan/10 px-2 py-0.5 text-[10px] font-bold text-neon-cyan">{items.length}</span>
+            )}
+          </div>
+          <div className="h-px bg-neon-cyan/10" />
+          <div className="max-h-96 overflow-y-auto">
+            {items.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                <Bell className="h-6 w-6 text-zinc-600" />
+                <span className="text-[13px] font-medium text-zinc-400">You're all caught up</span>
+                <span className="text-xs text-zinc-600">Tournament news and events will show up here.</span>
+              </div>
+            ) : (
+              items.map((item) => <NotificationItem key={item.id} item={item} now={now} onNavigate={() => setOpen(false)} />)
+            )}
+          </div>
+          <div className="h-px bg-neon-cyan/10" />
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              window.location.hash = 'tournaments';
+            }}
+            className="block w-full px-4 py-2.5 text-center text-xs font-semibold text-neon-cyan transition hover:bg-neon-cyan/[0.05]"
+          >
+            View tournaments
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Tracks the current hash route so nav links can highlight the active page. */
 function useHashRoute() {
@@ -308,14 +557,7 @@ export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, c
           </div>
 
           {/* Notifications */}
-          <button
-            type="button"
-            className="relative grid h-9 w-9 shrink-0 place-items-center rounded-lg text-zinc-300 transition hover:bg-white/[0.04] hover:text-zinc-50"
-            title="Notifications"
-          >
-            <Bell className="h-[18px] w-[18px]" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
-          </button>
+          <NotificationBell />
 
           {/* Account */}
           {user ? (
