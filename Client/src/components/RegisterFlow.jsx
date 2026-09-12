@@ -12,6 +12,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { passwordIssues } from '../lib/password';
 
 const ROBLOX_PROFILE_EDIT_URL = 'https://www.roblox.com/users/profile/edit';
 
@@ -49,6 +50,30 @@ function ErrorBanner({ message }) {
       <AlertCircle className="h-4 w-4 shrink-0" />
       {message}
     </div>
+  );
+}
+
+function PasswordChecklist({ password }) {
+  const issues = passwordIssues(password);
+  const rules = [
+    { label: 'At least 8 characters', met: !issues.some((i) => i.startsWith('At least')) },
+    { label: 'An uppercase letter', met: !issues.includes('An uppercase letter') },
+    { label: 'A lowercase letter', met: !issues.includes('A lowercase letter') },
+    { label: 'A number', met: !issues.includes('A number') },
+    { label: 'A symbol', met: !issues.includes('A symbol') }
+  ];
+
+  return (
+    <ul className="mt-2 space-y-1">
+      {rules.map((rule) => (
+        <li key={rule.label} className={`flex items-center gap-1.5 text-xs ${rule.met ? 'text-emerald-300' : 'text-zinc-500'}`}>
+          <span className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border text-[9px] ${rule.met ? 'border-emerald-400/60 bg-emerald-400/10' : 'border-zinc-600'}`}>
+            {rule.met ? '✓' : ''}
+          </span>
+          {rule.label}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -143,8 +168,9 @@ export default function RegisterFlow({ onLogin, onSwitchToLogin }) {
       setBusy(false);
       return;
     }
-    if (form.password.length < 6) {
-      setError('Password must be at least 6 characters.');
+    const issues = passwordIssues(form.password);
+    if (issues.length > 0) {
+      setError('Password does not meet the requirements: ' + issues.join(', ') + '.');
       setBusy(false);
       return;
     }
@@ -437,12 +463,13 @@ export default function RegisterFlow({ onLogin, onSwitchToLogin }) {
                 type="password"
                 value={form.password}
                 onChange={(e) => setForm((c) => ({ ...c, password: e.target.value }))}
-                placeholder="At least 6 characters"
+                placeholder="Create a strong password"
                 className={inputClass}
                 required
-                minLength={6}
+                minLength={8}
                 autoComplete="new-password"
               />
+              <PasswordChecklist password={form.password} />
             </div>
             <div>
               <label htmlFor="reg-confirm" className="mb-1.5 block text-sm font-medium text-zinc-300">Confirm password</label>
@@ -454,9 +481,12 @@ export default function RegisterFlow({ onLogin, onSwitchToLogin }) {
                 placeholder="Repeat your password"
                 className={inputClass}
                 required
-                minLength={6}
+                minLength={8}
                 autoComplete="new-password"
               />
+              {form.confirm.length > 0 && form.confirm !== form.password && (
+                <p className="mt-1.5 text-xs text-red-300">Passwords do not match yet.</p>
+              )}
             </div>
             <div>
               <label htmlFor="reg-discord-id" className="mb-1.5 block text-sm font-medium text-zinc-300">

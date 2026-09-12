@@ -174,6 +174,11 @@ public sealed class AdminController(ClubPlaytimeDbContext dbContext) : Controlle
             return BadRequest(new { message = $"Invalid role. Must be one of: {string.Join(", ", validRoles)}" });
         }
 
+        if (!Services.PasswordPolicy.IsValid(request.Password, out var passwordErrors))
+        {
+            return BadRequest(new { message = Services.PasswordPolicy.BuildErrorMessage(passwordErrors) });
+        }
+
         var user = new User
         {
             Username = request.Username,
@@ -223,6 +228,11 @@ public sealed class AdminController(ClubPlaytimeDbContext dbContext) : Controlle
         if (user is null)
         {
             return NotFound();
+        }
+
+        if (!Services.PasswordPolicy.IsValid(request.NewPassword, out var passwordErrors))
+        {
+            return BadRequest(new { message = Services.PasswordPolicy.BuildErrorMessage(passwordErrors) });
         }
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);

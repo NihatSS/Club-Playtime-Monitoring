@@ -42,6 +42,8 @@ import ProfilePage from './components/ProfilePage';
 import ProfileSetupGuide from './components/ProfileSetupGuide';
 import AdminUsersPage from './components/AdminUsersPage';
 import RequestJoinForm from './components/RequestJoinForm';
+import TournamentsPage from './components/TournamentsPage';
+import TournamentDetailPage from './components/TournamentDetailPage';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function statusMeta(status) {
@@ -884,6 +886,11 @@ export default function App() {
   const showProfilePage = showProfile;
   const showAdminUsers = route === 'admin-users' && isAdmin;
 
+  // Tournament routes: #/tournaments and #/tournaments/{id}
+  const isTournamentsRoute = route === 'tournaments';
+  const tournamentIdMatch = route.match(/^tournaments\/(\d+)$/);
+
+
   // The signed-in user's Roblox avatar for the circular account button.
   const headerAvatarUrl = myProfile?.player?.avatarUrl ?? null;
 
@@ -1103,6 +1110,31 @@ export default function App() {
         isAdmin={isAdmin}
         onLogout={handleLogout}
         onBack={() => { window.location.hash = ''; }}
+      />
+    );
+  }
+
+  if (isTournamentsRoute) {
+    return (
+      <TournamentsPage
+        user={user}
+        avatarUrl={headerAvatarUrl}
+        isAdmin={isAdmin}
+        onLogout={handleLogout}
+        onSignIn={() => setShowAuth(true)}
+      />
+    );
+  }
+
+  if (tournamentIdMatch) {
+    return (
+      <TournamentDetailPage
+        tournamentId={Number(tournamentIdMatch[1])}
+        user={user}
+        avatarUrl={headerAvatarUrl}
+        isAdmin={isAdmin}
+        onLogout={handleLogout}
+        onSignIn={() => setShowAuth(true)}
       />
     );
   }

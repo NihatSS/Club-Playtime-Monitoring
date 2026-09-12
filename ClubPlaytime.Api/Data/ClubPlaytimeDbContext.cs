@@ -17,6 +17,16 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
 
     public DbSet<JoinRequest> JoinRequests => Set<JoinRequest>();
 
+    public DbSet<Tournament> Tournaments => Set<Tournament>();
+
+    public DbSet<TournamentParticipant> TournamentParticipants => Set<TournamentParticipant>();
+
+    public DbSet<TournamentTeam> TournamentTeams => Set<TournamentTeam>();
+
+    public DbSet<TournamentMatch> TournamentMatches => Set<TournamentMatch>();
+
+    public DbSet<TournamentPrize> TournamentPrizes => Set<TournamentPrize>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Player>(entity =>
@@ -91,6 +101,101 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
                 .WithMany()
                 .HasForeignKey(r => r.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Tournament>(entity =>
+        {
+            entity.Property(t => t.Name).HasMaxLength(120).IsRequired();
+            entity.Property(t => t.Description).HasMaxLength(4000);
+            entity.Property(t => t.PrizeInfo).HasMaxLength(500);
+            entity.Property(t => t.Status).HasMaxLength(30).IsRequired();
+            entity.HasOne(t => t.CreatedBy)
+                .WithMany()
+                .HasForeignKey(t => t.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Prevent duplicate registration rows at the database level.
+            entity.HasMany(t => t.Participants)
+                .WithOne(p => p.Tournament)
+                .HasForeignKey(p => p.TournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(t => t.Teams)
+                .WithOne(tm => tm.Tournament)
+                .HasForeignKey(tm => tm.TournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(t => t.Matches)
+                .WithOne(m => m.Tournament)
+                .HasForeignKey(m => m.TournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(t => t.Prizes)
+                .WithOne(p => p.Tournament)
+                .HasForeignKey(p => p.TournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TournamentParticipant>(entity =>
+        {
+            // One registration per player per tournament.
+            entity.HasIndex(p => new { p.TournamentId, p.PlayerId }).IsUnique();
+            entity.HasOne(p => p.Player)
+                .WithMany()
+                .HasForeignKey(p => p.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(p => p.User)
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(p => p.Team)
+                .WithMany(tm => tm.Members)
+                .HasForeignKey(p => p.TeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.Property(p => p.DisqualifiedReason).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<TournamentTeam>(entity =>
+        {
+            entity.Property(tm => tm.Name).HasMaxLength(100).IsRequired();
+            entity.HasIndex(tm => new { tm.TournamentId, tm.Name }).IsUnique();
+        });
+
+        modelBuilder.Entity<TournamentMatch>(entity =>
+        {
+            entity.HasIndex(m => new { m.TournamentId, m.Round, m.Slot }).IsUnique();
+            entity.HasOne(m => m.Participant1)
+                .WithMany()
+                .HasForeignKey(m => m.Participant1Id)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.Participant2)
+                .WithMany()
+                .HasForeignKey(m => m.Participant2Id)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.Team1)
+                .WithMany()
+                .HasForeignKey(m => m.Team1Id)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.Team2)
+                .WithMany()
+                .HasForeignKey(m => m.Team2Id)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.Winner)
+                .WithMany()
+                .HasForeignKey(m => m.WinnerId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.WinnerTeam)
+                .WithMany()
+                .HasForeignKey(m => m.WinnerTeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.NextMatch)
+                .WithMany()
+                .HasForeignKey(m => m.NextMatchId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(m => m.Note).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<TournamentPrize>(entity =>
+        {
+            entity.Property(p => p.Description).HasMaxLength(300).IsRequired();
+            entity.HasIndex(p => new { p.TournamentId, p.Placement }).IsUnique();
         });
 
 

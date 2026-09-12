@@ -25,7 +25,7 @@ public sealed class CreateUserRequest
     [Required, MaxLength(50)]
     public string Username { get; set; } = string.Empty;
 
-    [Required, MinLength(6)]
+    [Required, MinLength(8)]
     public string Password { get; set; } = string.Empty;
 
     [Required]
@@ -37,7 +37,7 @@ public sealed class ChangePasswordRequest
     [Required]
     public string CurrentPassword { get; set; } = string.Empty;
 
-    [Required, MinLength(6)]
+    [Required, MinLength(8)]
     public string NewPassword { get; set; } = string.Empty;
 }
 
@@ -46,7 +46,7 @@ public sealed class RegisterRequest
     [Required, MaxLength(50)]
     public string Username { get; set; } = string.Empty;
 
-    [Required, MinLength(6)]
+    [Required, MinLength(8)]
     public string Password { get; set; } = string.Empty;
 
     /// <summary>Optional claim token obtained after Roblox ownership verification.</summary>

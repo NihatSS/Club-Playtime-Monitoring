@@ -147,6 +147,7 @@ builder.Services.AddScoped<IPlayerRepository, PlayerRepository>();
 builder.Services.AddScoped<IDailyPlaytimeRepository, DailyPlaytimeRepository>();
 builder.Services.AddScoped<IActivityRepository, ActivityRepository>();
 builder.Services.AddScoped<IPlayerStatsService, PlayerStatsService>();
+builder.Services.AddScoped<TournamentService>();
 builder.Services.AddHttpClient<IRobloxPresenceClient, RobloxPresenceClient>(client =>
 {
     client.DefaultRequestHeaders.UserAgent.ParseAdd("ClubPlaytimeTracker/1.0");

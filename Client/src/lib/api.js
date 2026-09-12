@@ -67,7 +67,21 @@ async function request(path, options = {}) {
     headers
   });
 
+  // 401 from the LOGIN endpoint means bad credentials — the caller must show
+  // the error on the login form instead of resetting the whole app. Any other
+  // 401 is a genuine session expiry.
   if (response.status === 401) {
+    if (path === '/api/auth/login' || path === '/api/auth/me') {
+      let message = 'Invalid username or password.';
+      try {
+        const problem = await response.json();
+        if (problem?.message) message = problem.message;
+      } catch {
+        // keep default message
+      }
+      throw new Error(message);
+    }
+
     clearAuth();
     if (onAuthExpired) onAuthExpired();
     throw new Error('Session expired. Please log in again.');
@@ -178,6 +192,69 @@ export const api = {
   getJoinRequests: (status) => request(`/api/joinrequest${status ? `?status=${status}` : ''}`),
   reviewJoinRequest: (id, status) => request(`/api/joinrequest/${id}/review`, { method: 'PUT', body: JSON.stringify({ status }) }),
   deleteJoinRequest: (id) => request(`/api/joinrequest/${id}`, { method: 'DELETE' }),
+
+  // ─── Tournaments ───────────────────────────────────────────
+  tournaments: () => request('/api/tournaments'),
+  tournament: (id) => request(`/api/tournaments/${id}`),
+
+  createTournament: (body) =>
+    request('/api/tournaments', { method: 'POST', body: JSON.stringify(body) }),
+  updateTournament: (id, body) =>
+    request(`/api/tournaments/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteTournament: (id) =>
+    request(`/api/tournaments/${id}`, { method: 'DELETE' }),
+  setTournamentStatus: (id, status) =>
+    request(`/api/tournaments/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  cancelTournament: (id) =>
+    request(`/api/tournaments/${id}/cancel`, { method: 'POST' }),
+
+  registerForTournament: (id, playerId) =>
+    request(`/api/tournaments/${id}/register`, { method: 'POST', body: JSON.stringify({ playerId }) }),
+  adminAddParticipant: (id, playerId) =>
+    request(`/api/tournaments/${id}/participants`, { method: 'POST', body: JSON.stringify({ playerId }) }),
+  removeTournamentParticipant: (id, participantId) =>
+    request(`/api/tournaments/${id}/participants/${participantId}`, { method: 'DELETE' }),
+  disqualifyParticipant: (id, participantId, reason) =>
+    request(`/api/tournaments/${id}/participants/${participantId}/disqualify`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    }),
+  requalifyParticipant: (id, participantId) =>
+    request(`/api/tournaments/${id}/participants/${participantId}/requalify`, { method: 'POST' }),
+
+  createTeam: (id, name) =>
+    request(`/api/tournaments/${id}/teams`, { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteTeam: (id, teamId) =>
+    request(`/api/tournaments/${id}/teams/${teamId}`, { method: 'DELETE' }),
+  assignTeamMember: (id, teamId, participantId) =>
+    request(`/api/tournaments/${id}/teams/${teamId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ participantId })
+    }),
+  removeTeamMember: (id, teamId, participantId) =>
+    request(`/api/tournaments/${id}/teams/${teamId}/members/${participantId}`, { method: 'DELETE' }),
+  replaceTeamPlayer: (id, teamId, oldParticipantId, newParticipantId) =>
+    request(`/api/tournaments/${id}/teams/${teamId}/replace-player`, {
+      method: 'POST',
+      body: JSON.stringify({ oldParticipantId, newParticipantId })
+    }),
+  createRandomTeams: (id) =>
+    request(`/api/tournaments/${id}/teams/random`, { method: 'POST' }),
+
+  generateBracket: (id) =>
+    request(`/api/tournaments/${id}/bracket`, { method: 'POST' }),
+  deleteBracket: (id) =>
+    request(`/api/tournaments/${id}/bracket`, { method: 'DELETE' }),
+  setMatchWinner: (id, matchId, winnerParticipantId, note = '', confirmCascade = false) =>
+    request(`/api/tournaments/${id}/matches/${matchId}/winner`, {
+      method: 'POST',
+      body: JSON.stringify({ winnerParticipantId, note, confirmCascade })
+    }),
+  setMatchParticipants: (id, matchId, participant1Id, participant2Id) =>
+    request(`/api/tournaments/${id}/matches/${matchId}/participants`, {
+      method: 'POST',
+      body: JSON.stringify({ participant1Id, participant2Id })
+    }),
 
   // Helpers
   isLoggedIn,

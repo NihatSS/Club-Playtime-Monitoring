@@ -14,6 +14,8 @@ import {
   User as UserIcon
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { PasswordChecklist } from './ProfilePage';
+import { passwordIssues } from '../lib/password';
 import { formatDateTime } from '../lib/format';
 import Header from './Header';
 
@@ -89,8 +91,9 @@ function EditUserForm({ user, onSaved, onDone }) {
       setError('Passwords do not match.');
       return;
     }
-    if (pwForm.next.length < 6) {
-      setError('Password must be at least 6 characters.');
+    const issues = passwordIssues(pwForm.next);
+    if (issues.length > 0) {
+      setError('Password does not meet the requirements: ' + issues.join(', ') + '.');
       return;
     }
     setPwBusy(true);
@@ -255,12 +258,13 @@ function EditUserForm({ user, onSaved, onDone }) {
                 type="password"
                 value={pwForm.next}
                 onChange={(e) => setPwForm((c) => ({ ...c, next: e.target.value }))}
-                placeholder="New password (min 6 characters)"
+                placeholder="New password"
                 className="w-full min-h-9 rounded-md border border-neon-cyan/[0.08] bg-panel px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
                 required
-                minLength={6}
+                minLength={8}
                 autoComplete="new-password"
               />
+              <PasswordChecklist password={pwForm.next} />
               <input
                 type="password"
                 value={pwForm.confirm}
@@ -268,7 +272,7 @@ function EditUserForm({ user, onSaved, onDone }) {
                 placeholder="Repeat new password"
                 className="w-full min-h-9 rounded-md border border-neon-cyan/[0.08] bg-panel px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
                 required
-                minLength={6}
+                minLength={8}
                 autoComplete="new-password"
               />
             </div>

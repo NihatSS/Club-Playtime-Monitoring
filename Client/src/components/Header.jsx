@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleUser, Gamepad2, LogIn, LogOut, Shield, User } from 'lucide-react';
+import { CircleUser, Gamepad2, LogIn, LogOut, Shield, Swords, User } from 'lucide-react';
 
 function MenuItem({ icon: Icon, label, onClick, danger = false }) {
   return (
@@ -130,20 +130,30 @@ export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, c
   return (
     <header className="sticky top-0 z-20 border-b border-neon-cyan/[0.08] bg-[#050510]/90 backdrop-blur-md">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3">
-        <button
-          type="button"
-          onClick={() => { window.location.hash = ''; }}
-          className="flex items-center gap-3 text-left"
-          title="Home"
-        >
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-neon-cyan text-zinc-950">
-            <Gamepad2 className="h-5 w-5" />
-          </span>
-          <span>
-            <span className="block text-base font-bold tracking-tight text-zinc-50">Club Playtime</span>
-            <span className="block text-[11px] text-mist">Racket Rivals tracker</span>
-          </span>
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => { window.location.hash = ''; }}
+            className="flex items-center gap-3 text-left"
+            title="Home"
+          >
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-neon-cyan text-zinc-950">
+              <Gamepad2 className="h-5 w-5" />
+            </span>
+            <span>
+              <span className="block text-base font-bold tracking-tight text-zinc-50">Club Playtime</span>
+              <span className="block text-[11px] text-mist">Racket Rivals tracker</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = 'tournaments'; }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-300 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100"
+          >
+            <Swords className="h-4 w-4 text-neon-purple" />
+            Tournaments
+          </button>
+        </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           {children}

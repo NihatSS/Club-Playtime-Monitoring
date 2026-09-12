@@ -3,6 +3,7 @@ using System;
 using ClubPlaytime.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ClubPlaytime.Api.Migrations
 {
     [DbContext(typeof(ClubPlaytimeDbContext))]
-    partial class ClubPlaytimeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260912114357_AddTournaments")]
+    partial class AddTournaments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.0");
@@ -207,10 +210,6 @@ namespace ClubPlaytime.Api.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("FirstPlaceName")
-                        .HasMaxLength(120)
-                        .HasColumnType("TEXT");
-
                     b.Property<int?>("FirstPlaceParticipantId")
                         .HasColumnType("INTEGER");
 
@@ -235,10 +234,6 @@ namespace ClubPlaytime.Api.Migrations
                     b.Property<DateTime>("RegistrationStartsAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("SecondPlaceName")
-                        .HasMaxLength(120)
-                        .HasColumnType("TEXT");
-
                     b.Property<int?>("SecondPlaceParticipantId")
                         .HasColumnType("INTEGER");
 
@@ -252,10 +247,6 @@ namespace ClubPlaytime.Api.Migrations
 
                     b.Property<int>("TeamMode")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("ThirdPlaceName")
-                        .HasMaxLength(120)
-                        .HasColumnType("TEXT");
 
                     b.Property<int?>("ThirdPlaceParticipantId")
                         .HasColumnType("INTEGER");
@@ -306,19 +297,10 @@ namespace ClubPlaytime.Api.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");
 
-                    b.Property<int?>("Team1Id")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("Team2Id")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("TournamentId")
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("WinnerId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("WinnerTeamId")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
@@ -329,13 +311,7 @@ namespace ClubPlaytime.Api.Migrations
 
                     b.HasIndex("Participant2Id");
 
-                    b.HasIndex("Team1Id");
-
-                    b.HasIndex("Team2Id");
-
                     b.HasIndex("WinnerId");
-
-                    b.HasIndex("WinnerTeamId");
 
                     b.HasIndex("TournamentId", "Round", "Slot")
                         .IsUnique();
@@ -590,16 +566,6 @@ namespace ClubPlaytime.Api.Migrations
                         .HasForeignKey("Participant2Id")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ClubPlaytime.Api.Models.TournamentTeam", "Team1")
-                        .WithMany()
-                        .HasForeignKey("Team1Id")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ClubPlaytime.Api.Models.TournamentTeam", "Team2")
-                        .WithMany()
-                        .HasForeignKey("Team2Id")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("ClubPlaytime.Api.Models.Tournament", "Tournament")
                         .WithMany("Matches")
                         .HasForeignKey("TournamentId")
@@ -611,26 +577,15 @@ namespace ClubPlaytime.Api.Migrations
                         .HasForeignKey("WinnerId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ClubPlaytime.Api.Models.TournamentTeam", "WinnerTeam")
-                        .WithMany()
-                        .HasForeignKey("WinnerTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("NextMatch");
 
                     b.Navigation("Participant1");
 
                     b.Navigation("Participant2");
 
-                    b.Navigation("Team1");
-
-                    b.Navigation("Team2");
-
                     b.Navigation("Tournament");
 
                     b.Navigation("Winner");
-
-                    b.Navigation("WinnerTeam");
                 });
 
             modelBuilder.Entity("ClubPlaytime.Api.Models.TournamentParticipant", b =>

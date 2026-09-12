@@ -19,6 +19,7 @@ import {
   User
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { passwordIssues } from '../lib/password';
 import { formatDateTime, formatDuration } from '../lib/format';
 import Header from './Header';
 
@@ -34,6 +35,30 @@ function Section({ icon: Icon, title, accent, children }) {
       </div>
       {children}
     </div>
+  );
+}
+
+export function PasswordChecklist({ password }) {
+  const issues = passwordIssues(password);
+  const rules = [
+    { label: 'At least 8 characters', met: !issues.some((i) => i.startsWith('At least')) },
+    { label: 'An uppercase letter', met: !issues.includes('An uppercase letter') },
+    { label: 'A lowercase letter', met: !issues.includes('A lowercase letter') },
+    { label: 'A number', met: !issues.includes('A number') },
+    { label: 'A symbol', met: !issues.includes('A symbol') }
+  ];
+
+  return (
+    <ul className="mt-2 space-y-1">
+      {rules.map((rule) => (
+        <li key={rule.label} className={`flex items-center gap-1.5 text-xs ${rule.met ? 'text-emerald-300' : 'text-zinc-500'}`}>
+          <span className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border text-[9px] ${rule.met ? 'border-emerald-400/60 bg-emerald-400/10' : 'border-zinc-600'}`}>
+            {rule.met ? '✓' : ''}
+          </span>
+          {rule.label}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -168,8 +193,9 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
       setError('New passwords do not match.');
       return;
     }
-    if (pwForm.next.length < 6) {
-      setError('New password must be at least 6 characters.');
+    const issues = passwordIssues(pwForm.next);
+    if (issues.length > 0) {
+      setError('Password does not meet the requirements: ' + issues.join(', ') + '.');
       return;
     }
     setPwBusy(true);
@@ -274,10 +300,10 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                   type={showPw ? 'text' : 'password'}
                   value={pwForm.next}
                   onChange={(e) => setPwForm((c) => ({ ...c, next: e.target.value }))}
-                  placeholder="New password (min 6 characters)"
+                  placeholder="New password"
                   className="w-full min-h-9 rounded-md border border-line bg-panel px-3 pr-10 text-sm text-zinc-50 placeholder:text-zinc-500"
                   required
-                  minLength={6}
+                  minLength={8}
                   autoComplete="new-password"
                 />
                 <button
@@ -289,15 +315,15 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              <PasswordChecklist password={pwForm.next} />
               <input
-                type={showPw ? 'text' : 'password'}
-                value={pwForm.confirm}
-                onChange={(e) => setPwForm((c) => ({ ...c, confirm: e.target.value }))}
-                placeholder="Repeat new password"
-                className="w-full min-h-9 rounded-md border border-line bg-panel px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
-                required
-                minLength={6}
-                autoComplete="new-password"
+                type={showPw ? 'text' : 'password'}                  value={pwForm.confirm}
+                  onChange={(e) => setPwForm((c) => ({ ...c, confirm: e.target.value }))}
+                  placeholder="Repeat new password"
+                  className="w-full min-h-9 rounded-md border border-line bg-panel px-3 text-sm text-zinc-50 placeholder:text-zinc-500"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
               />
               <div className="flex gap-2 pt-1">
                 <button

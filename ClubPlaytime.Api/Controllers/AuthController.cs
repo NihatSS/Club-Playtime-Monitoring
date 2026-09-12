@@ -70,9 +70,9 @@ public sealed class AuthController(
             return BadRequest(new { message = "Username must be between 3 and 50 characters." });
         }
 
-        if (password.Length < 6)
+        if (!PasswordPolicy.IsValid(password, out var passwordErrors))
         {
-            return BadRequest(new { message = "Password must be at least 6 characters." });
+            return BadRequest(new { message = PasswordPolicy.BuildErrorMessage(passwordErrors) });
         }
 
         if (await dbContext.Users.AnyAsync(u => u.Username == username))
@@ -340,6 +340,11 @@ public sealed class AuthController(
         if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash))
         {
             return BadRequest(new { message = "Current password is incorrect." });
+        }
+
+        if (!PasswordPolicy.IsValid(request.NewPassword, out var passwordErrors))
+        {
+            return BadRequest(new { message = PasswordPolicy.BuildErrorMessage(passwordErrors) });
         }
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
