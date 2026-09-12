@@ -61,6 +61,7 @@ public sealed class TournamentsController(
             MaxParticipants = t.MaxParticipants,
             ParticipantCount = participantCounts.GetValueOrDefault(t.Id),
             PrizeInfo = t.PrizeInfo,
+            RulesText = t.RulesText,
             CreatedAt = t.CreatedAt,
             CompletedAt = t.CompletedAt,
             WinnerName = t.FirstPlaceName
@@ -131,6 +132,7 @@ public sealed class TournamentsController(
         {
             Name = request.Name.Trim(),
             Description = request.Description?.Trim(),
+            RulesText = request.RulesText?.Trim(),
             TeamMode = teamMode,
             RegistrationStartsAt = registrationStart,
             RegistrationDeadline = request.RegistrationDeadline ?? registrationStart.AddDays(7),
@@ -183,6 +185,7 @@ public sealed class TournamentsController(
 
         tournament.Name = request.Name.Trim();
         tournament.Description = request.Description?.Trim();
+        tournament.RulesText = request.RulesText?.Trim();
         tournament.RegistrationStartsAt = request.RegistrationStartsAt ?? tournament.RegistrationStartsAt;
         tournament.RegistrationDeadline = request.RegistrationDeadline ?? tournament.RegistrationDeadline;
         tournament.StartsAt = request.StartsAt ?? tournament.StartsAt;
@@ -766,6 +769,7 @@ public sealed class TournamentsController(
             StartsAt = tournament.StartsAt,
             MaxParticipants = tournament.MaxParticipants,
             PrizeInfo = tournament.PrizeInfo,
+            RulesText = tournament.RulesText,
             CreatedAt = tournament.CreatedAt,
             CompletedAt = tournament.CompletedAt,
             IsRegistered = currentPlayerId != null && tournament.Participants.Any(p => p.UserId == currentPlayerId

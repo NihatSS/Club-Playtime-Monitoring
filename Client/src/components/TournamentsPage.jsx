@@ -66,6 +66,7 @@ function TournamentForm({ initial, busy, error, onSubmit, onCancel }) {
     initial ?? {
       name: '',
       description: '',
+      rulesText: '',
       teamMode: 'Solo',
       registrationStart: '',
       registrationDeadline: '',
@@ -91,6 +92,7 @@ function TournamentForm({ initial, busy, error, onSubmit, onCancel }) {
     onSubmit({
       name: form.name.trim(),
       description: form.description.trim(),
+      rulesText: form.rulesText.trim(),
       teamMode: form.teamMode,
       registrationStartsAt: toUtcIso(form.registrationStart),
       registrationDeadline: toUtcIso(form.registrationDeadline),
@@ -132,14 +134,28 @@ function TournamentForm({ initial, busy, error, onSubmit, onCancel }) {
       </div>
 
       <div>
-        <label htmlFor="t-desc" className="mb-1 block text-xs font-medium text-zinc-400">Description / rules</label>
+        <label htmlFor="t-desc" className="mb-1 block text-xs font-medium text-zinc-400">Description</label>
         <textarea
           id="t-desc"
           value={form.description}
           onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
           className={`${inputClass} min-h-20`}
           maxLength={4000}
+          placeholder="What is this tournament about? Shown above the schedule."
         />
+      </div>
+
+      <div>
+        <label htmlFor="t-rules" className="mb-1 block text-xs font-medium text-zinc-400">Rules (one per line)</label>
+        <textarea
+          id="t-rules"
+          value={form.rulesText}
+          onChange={(e) => setForm((c) => ({ ...c, rulesText: e.target.value }))}
+          className={`${inputClass} min-h-24`}
+          maxLength={4000}
+          placeholder={'Awakenings r not allowed\nEach team can select 1 spirit to ban\nCheating is not allowed'}
+        />
+        <p className="mt-1 text-[11px] text-zinc-500">Each line becomes a bullet in the Rules tab.</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">

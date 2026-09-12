@@ -12,6 +12,10 @@ public sealed class CreateTournamentRequest
     [MaxLength(4000)]
     public string? Description { get; set; }
 
+    /// <summary>Free-form rules, one per line.</summary>
+    [MaxLength(4000)]
+    public string? RulesText { get; set; }
+
     /// <summary>"Solo" (1v1), "DuoRandom" (2v2 random) or "DuoPredefined" (2v2 predefined).</summary>
     [Required]
     public string TeamMode { get; set; } = "Solo";
@@ -40,6 +44,10 @@ public sealed class UpdateTournamentRequest
 
     [MaxLength(4000)]
     public string? Description { get; set; }
+
+    /// <summary>Free-form rules, one per line.</summary>
+    [MaxLength(4000)]
+    public string? RulesText { get; set; }
 
     public DateTime? RegistrationStartsAt { get; set; }
 
@@ -154,6 +162,7 @@ public sealed class TournamentListItemDto
     public int MaxParticipants { get; set; }
     public int ParticipantCount { get; set; }
     public string? PrizeInfo { get; set; }
+    public string? RulesText { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? WinnerName { get; set; }
@@ -171,6 +180,7 @@ public sealed class TournamentDetailDto
     public DateTime StartsAt { get; set; }
     public int MaxParticipants { get; set; }
     public string? PrizeInfo { get; set; }
+    public string? RulesText { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public bool IsRegistered { get; set; }

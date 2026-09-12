@@ -189,10 +189,11 @@ function BracketMatchCard({ match, isAdmin, onSetWinner, busy }) {
 function InfoTabs({ tournament }) {
   const [tab, setTab] = useState('rules');
 
-  const rules = (tournament.description ?? '')
+  const rules = (tournament.rulesText ?? tournament.description ?? '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+  const description = tournament.description?.trim();
 
   const prizes = [...tournament.prizes].sort((a, b) => a.placement - b.placement);
   const prizeInfo = tournament.prizeInfo?.trim();
@@ -222,15 +223,20 @@ function InfoTabs({ tournament }) {
 
       <div className="p-4">
         {tab === 'rules' ? (
-          rules.length > 0 ? (
-            <ul className="space-y-1.5">
-              {rules.map((rule, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-zinc-300">
-                  <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-zinc-500" />
-                  <span>{rule.replace(/^[•\-*]\s*/, '')}</span>
-                </li>
-              ))}
-            </ul>
+          rules.length > 0 || description ? (
+            <div className="space-y-3">
+              {description && <p className="whitespace-pre-line text-sm leading-relaxed text-zinc-300">{description}</p>}
+              {rules.length > 0 && (
+                <ul className="space-y-1.5">
+                  {rules.map((rule, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-zinc-300">
+                      <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-zinc-500" />
+                      <span>{rule.replace(/^[•\-*]\s*/, '')}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           ) : (
             <div className="text-sm text-zinc-500">No rules have been published for this tournament.</div>
           )
@@ -625,8 +631,8 @@ function BracketAdmin({ tournament, onAction, busy }) {
 
 function EditDetailsForm({ tournament, onAction, busy }) {
   const [form, setForm] = useState({
-    name: tournament.name,
-    description: tournament.description ?? '',
+    name: tournament.name,      description: tournament.description ?? '',
+      rulesText: tournament.rulesText ?? '',
     registrationStartsAt: toLocalInput(tournament.registrationStartsAt),
     registrationDeadline: toLocalInput(tournament.registrationDeadline),
     startsAt: toLocalInput(tournament.startsAt),
@@ -649,6 +655,7 @@ function EditDetailsForm({ tournament, onAction, busy }) {
         api.updateTournament(tournament.id, {
           name: form.name.trim(),
           description: form.description.trim(),
+          rulesText: form.rulesText.trim(),
           registrationStartsAt: form.registrationStartsAt ? new Date(form.registrationStartsAt).toISOString() : null,
           registrationDeadline: form.registrationDeadline ? new Date(form.registrationDeadline).toISOString() : null,
           startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
@@ -677,7 +684,14 @@ function EditDetailsForm({ tournament, onAction, busy }) {
         onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
         className={`${inputClass} min-h-16`}
         maxLength={4000}
-        placeholder="Description / rules"
+        placeholder="Description"
+      />
+      <textarea
+        value={form.rulesText}
+        onChange={(e) => setForm((c) => ({ ...c, rulesText: e.target.value }))}
+        className={`${inputClass} min-h-20`}
+        maxLength={4000}
+        placeholder={'Rules (one per line)\nAwakenings r not allowed\nCheating is not allowed'}
       />
       <div className="grid gap-2 sm:grid-cols-3">
         <label className="text-xs text-zinc-400">

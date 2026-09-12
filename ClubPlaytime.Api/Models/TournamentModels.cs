@@ -42,6 +42,10 @@ public sealed class Tournament
     [System.ComponentModel.DataAnnotations.MaxLength(4000)]
     public string? Description { get; set; }
 
+    /// <summary>Free-form rules, one per line (rendered as a bullet list).</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(4000)]
+    public string? RulesText { get; set; }
+
     /// <summary>Game format (e.g. Single Elimination).</summary>
     public TournamentFormat Format { get; set; } = TournamentFormat.SingleElimination;
 

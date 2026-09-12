@@ -469,6 +469,11 @@ static void ApplyPostgresTournamentSchema(ClubPlaytimeDbContext dbContext)
             END IF;
         END $$;
         """);
+
+    // RulesText was added after the tournament schema first shipped.
+    dbContext.Database.ExecuteSqlRaw("""
+        ALTER TABLE "Tournaments" ADD COLUMN IF NOT EXISTS "RulesText" character varying(4000) NULL;
+        """);
 }
 
 // Announcements table for existing PostgreSQL deployments (same additive
