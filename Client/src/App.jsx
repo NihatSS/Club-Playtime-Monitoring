@@ -43,6 +43,7 @@ import AdminUsersPage from './components/AdminUsersPage';
 import RequestJoinForm from './components/RequestJoinForm';
 import TournamentsPage from './components/TournamentsPage';
 import TournamentDetailPage from './components/TournamentDetailPage';
+import RewardsPage from './components/RewardsPage';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function statusMeta(status) {
@@ -1114,6 +1115,19 @@ export default function App() {
     return (
       <TournamentDetailPage
         tournamentId={Number(tournamentIdMatch[1])}
+        user={user}
+        avatarUrl={headerAvatarUrl}
+        isAdmin={isAdmin}
+        onLogout={handleLogout}
+        onSignIn={() => setShowAuth(true)}
+      />
+    );
+  }
+
+  // Monthly playtime reward page: #/rewards
+  if (route === 'rewards') {
+    return (
+      <RewardsPage
         user={user}
         avatarUrl={headerAvatarUrl}
         isAdmin={isAdmin}

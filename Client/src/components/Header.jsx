@@ -6,6 +6,7 @@ import {
   CircleUser,
   Clock,
   Gamepad2,
+  Gift,
   Home,
   LayoutGrid,
   LogIn,
@@ -652,8 +653,10 @@ export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, c
 
   const isHome = route === '';
   const isTournaments = route === 'tournaments' || /^tournaments\/\d+$/.test(route);
+  const isRewards = route === 'rewards';
 
   const moreItems = [
+    { label: 'Rewards', icon: Gift, onClick: go('rewards') },
     ...(user ? [{ label: 'Profile', icon: User, onClick: go('profile') }] : []),
     ...(isAdmin ? [{ label: 'Admin Panel', icon: Shield, onClick: go('admin-users') }] : []),
     ...(!user ? [{ label: 'Sign In', icon: LogIn, onClick: onSignIn }] : [])
@@ -682,7 +685,7 @@ export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, c
         <nav className="mx-auto hidden items-center gap-1.5 md:flex">
           <NavLink icon={Home} label="Home" active={isHome} onClick={go('')} />
           <NavLink icon={Trophy} label="Tournaments" active={isTournaments} onClick={go('tournaments')} />
-          <NavDropdown icon={LayoutGrid} label="More" items={moreItems} active={route === 'profile' || route === 'admin-users'} />
+          <NavDropdown icon={LayoutGrid} label="More" items={moreItems} active={isRewards || route === 'profile' || route === 'admin-users'} />
         </nav>
 
         {/* Mobile fallback: icon-only nav (full nav hidden below md) */}

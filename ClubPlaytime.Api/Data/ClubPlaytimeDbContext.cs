@@ -29,6 +29,8 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
 
     public DbSet<Announcement> Announcements => Set<Announcement>();
 
+    public DbSet<MonthlyRewardSetting> MonthlyRewardSetting => Set<MonthlyRewardSetting>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Announcement>(entity =>
@@ -38,6 +40,12 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
             entity.Property(a => a.LinkUrl).HasMaxLength(300);
             entity.Property(a => a.CreatedBy).HasMaxLength(50).IsRequired();
             entity.HasIndex(a => a.CreatedAt);
+        });
+
+        modelBuilder.Entity<MonthlyRewardSetting>(entity =>
+        {
+            entity.Property(r => r.Prize).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.UpdatedBy).HasMaxLength(50);
         });
 
         modelBuilder.Entity<Player>(entity =>

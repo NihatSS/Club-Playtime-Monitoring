@@ -188,6 +188,11 @@ export const api = {
   getMyJoinRequestAuthenticated: () => request('/api/joinrequest/mine-auth'),
   updateJoinRequest: (id, body) => request(`/api/joinrequest/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
 
+  // Monthly playtime reward (public read, admin edit)
+  monthlyReward: () => request('/api/rewards/monthly'),
+  updateMonthlyReward: (prize) =>
+    request('/api/rewards/monthly', { method: 'PUT', body: JSON.stringify({ prize }) }),
+
   // Announcements (public read, admin write)
   announcements: (limit = 20) => request(`/api/announcements?limit=${limit}`),
   createAnnouncement: (body) =>
