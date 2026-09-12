@@ -220,12 +220,15 @@ function NotificationBell({ isAdmin }) {
   // dropdown was opened. Future-scheduled items ("starts soon") don't keep
   // the dot lit forever — only events that already occurred count.
   const [deletingId, setDeletingId] = useState(null);
+  const now = Date.now();
 
+  // Unread = something happened (or was created) after the last time the
+  // dropdown was opened. Future-scheduled items ("starts soon") don't keep
+  // the dot lit forever — only events that already occurred count.
   const hasUnread = items.some((it) => {
     const ts = new Date(it.time).getTime();
     return ts <= now && ts > seenAt;
   });
-  const now = Date.now();
 
   function toggle() {
     setOpen((o) => {
