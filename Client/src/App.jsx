@@ -12,7 +12,6 @@ import {
   Copy,
   ExternalLink,
   Gamepad2,
-  Globe,
   LayoutGrid,
   Play,
   RefreshCw,
@@ -611,6 +610,12 @@ function DetailPanel({ details, onClose, onDelete, busy, isAdmin, onClubChange }
               <span className="font-mono text-xs">ID: {details.robloxUserId}</span>
               <CopyIdButton id={details.robloxUserId} />
             </div>
+            {details.discordUserId && (
+              <div className="mt-0.5 flex items-center gap-1 text-sm text-mist">
+                <span className="font-mono text-xs">Discord: {details.discordUserId}</span>
+                <CopyIdButton id={details.discordUserId} />
+              </div>
+            )}
             <a
               href={details.profileUrl}
               target="_blank"
@@ -745,27 +750,6 @@ function DetailPanel({ details, onClose, onDelete, busy, isAdmin, onClubChange }
           ))}
         </div>
       </div>
-
-      {/* Discord Info */}
-      {details.discordUserId && (
-        <div className="rounded-lg border border-neon-purple/[0.12] bg-ink p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-100">
-            <Globe className="h-4 w-4 text-neon-purple" />
-            DISCORD
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5 text-mist">
-                <span className="text-zinc-500">Discord ID</span>
-              </span>
-              <span className="flex items-center gap-1.5 font-medium text-zinc-200">
-                <span className="font-mono">{details.discordUserId}</span>
-                <CopyIdButton id={details.discordUserId} />
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Delete button */}
       {isAdmin && (
