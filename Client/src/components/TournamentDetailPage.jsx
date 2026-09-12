@@ -60,20 +60,54 @@ function Avatar({ url, name, size = 'h-8 w-8' }) {
 
 // ─── Bracket rendering ─────────────────────────────────────────
 
-function BracketColumn({ title, matches, isAdmin, onSetWinner, busyMatchId, tournamentId }) {
+// Bracket column: match cards are laid out in equal "bands" (flex-1 wrappers,
+// card centered inside) so every card sits exactly midway between its two
+// feeder matches. Connector lines are drawn against those bands: a horizontal
+// stub from each card to the column gap, and a vertical spine on the upper
+// card of each pair spanning down to its sibling's center (COL_GAP / 2 = 12px).
+const BRACKET_COL_GAP = 24; // keep in sync with the gap-6 on the bracket row
+
+function BracketColumn({ title, matches, isLastRound, showChampionStub, isAdmin, onSetWinner, busyMatchId }) {
   return (
     <div className="flex min-w-[240px] flex-1 flex-col">
       <div className="mb-3 text-center text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{title}</div>
-      <div className="flex flex-1 flex-col justify-around gap-3">
-        {matches.map((match) => (
-          <BracketMatchCard
-            key={match.id}
-            match={match}
-            isAdmin={isAdmin}
-            onSetWinner={onSetWinner}
-            busy={busyMatchId === match.id}
-          />
-        ))}
+      <div className="flex flex-1 flex-col">
+        {matches.map((match, index) => {
+          const isUpperOfPair = !isLastRound && index % 2 === 0 && index + 1 < matches.length;
+          return (
+            <div key={match.id} className="relative flex flex-1 flex-col justify-center py-1.5">
+              <BracketMatchCard
+                match={match}
+                isAdmin={isAdmin}
+                onSetWinner={onSetWinner}
+                busy={busyMatchId === match.id}
+              />
+              {!isLastRound && (
+                <>
+                  {/* Horizontal stub: card → column gap midpoint */}
+                  <div
+                    className="pointer-events-none absolute h-px bg-zinc-600/60"
+                    style={{ right: -(BRACKET_COL_GAP / 2), top: '50%', width: BRACKET_COL_GAP / 2 }}
+                  />
+                  {/* Vertical spine: upper card's center → sibling card's center */}
+                  {isUpperOfPair && (
+                    <div
+                      className="pointer-events-none absolute w-px bg-zinc-600/60"
+                      style={{ right: -(BRACKET_COL_GAP / 2), top: '50%', height: '100%' }}
+                    />
+                  )}
+                </>
+              )}
+              {isLastRound && showChampionStub && (
+                /* Champion path: the final keeps a short line pointing right */
+                <div
+                  className="pointer-events-none absolute h-px bg-zinc-600/60"
+                  style={{ right: -(BRACKET_COL_GAP / 2), top: '50%', width: BRACKET_COL_GAP / 2 }}
+                />
+              )}
+            </div>
+          );
+        })}
         {matches.length === 0 && <div className="text-center text-xs text-zinc-600">—</div>}
       </div>
     </div>
@@ -145,6 +179,83 @@ function BracketMatchCard({ match, isAdmin, onSetWinner, busy }) {
       {match.note && !isBye && (
         <div className="mt-1 border-t border-neon-cyan/[0.06] px-2 pt-1 text-[10px] text-zinc-500">{match.note}</div>
       )}
+    </div>
+  );
+}
+
+
+// ─── Info tabs (Rules / Prizes) ───────────────────────────────
+
+function InfoTabs({ tournament }) {
+  const [tab, setTab] = useState('rules');
+
+  const rules = (tournament.description ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const prizes = [...tournament.prizes].sort((a, b) => a.placement - b.placement);
+  const prizeInfo = tournament.prizeInfo?.trim();
+  const placeMedals = { 1: '🥇 1st place', 2: '🥈 2nd place', 3: '🥉 3rd place' };
+
+  return (
+    <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a]">
+      <div className="flex border-b border-neon-cyan/[0.08]">
+        {[
+          { id: 'rules', label: 'Rules' },
+          { id: 'prizes', label: 'Prizes' }
+        ].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-2.5 text-sm font-semibold transition ${
+              tab === t.id
+                ? 'border-b-2 border-neon-cyan text-zinc-50'
+                : 'border-b-2 border-transparent text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-4">
+        {tab === 'rules' ? (
+          rules.length > 0 ? (
+            <ul className="space-y-1.5">
+              {rules.map((rule, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-zinc-300">
+                  <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-zinc-500" />
+                  <span>{rule.replace(/^[•\-*]\s*/, '')}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-sm text-zinc-500">No rules have been published for this tournament.</div>
+          )
+        ) : (
+          <div className="space-y-2">
+            {prizes.map((prize) => (
+              <div
+                key={prize.placement}
+                className="flex items-center gap-3 rounded-lg border border-neon-cyan/[0.08] bg-ink px-3 py-2.5"
+              >
+                <span className="w-24 shrink-0 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  {placeMedals[prize.placement] ?? `#${prize.placement}`}
+                </span>
+                <span className="min-w-0 flex-1 text-sm text-zinc-100">{prize.description}</span>
+              </div>
+            ))}
+            {prizes.length === 0 && prizeInfo && (
+              <div className="text-sm text-zinc-300">{prizeInfo}</div>
+            )}
+            {prizes.length === 0 && !prizeInfo && (
+              <div className="text-sm text-zinc-500">No prizes have been announced for this tournament.</div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -815,8 +926,8 @@ export default function TournamentDetailPage({ tournamentId, user, avatarUrl, is
           </div>
         )}
 
-        {/* Schedule + prizes summary */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Schedule summary (prizes moved into the Rules/Prizes tabs below) */}
+        <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a] p-4">
             <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500"><Clock className="h-3 w-3" /> Starts</div>
             <div className="mt-1 text-sm font-semibold text-zinc-50">{formatDateTime(tournament.startsAt)}</div>
@@ -832,13 +943,10 @@ export default function TournamentDetailPage({ tournamentId, user, avatarUrl, is
               {tournament.maxParticipants > 0 ? ` / ${tournament.maxParticipants}` : ''}
             </div>
           </div>
-          <div className="rounded-xl border border-neon-cyan/[0.08] bg-[#08081a] p-4">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500"><Trophy className="h-3 w-3" /> Prizes</div>
-            <div className="mt-1 truncate text-sm font-semibold text-zinc-50" title={tournament.prizeInfo ?? ''}>
-              {tournament.prizes.length > 0 ? `${tournament.prizes.length} configured` : (tournament.prizeInfo || 'None')}
-            </div>
-          </div>
         </div>
+
+        {/* Rules & prizes tabs */}
+        <InfoTabs tournament={tournament} />
 
         {/* Registration CTA */}
         {user && ['REGISTRATION_OPEN', 'DRAFT', 'UPCOMING', 'REGISTRATION_CLOSED'].includes(tournament.status) && (
@@ -964,17 +1072,18 @@ export default function TournamentDetailPage({ tournamentId, user, avatarUrl, is
               <Swords className="h-5 w-5 text-neon-purple" />
               Bracket
             </h2>
-            <div className="overflow-x-auto thin-scrollbar rounded-xl border border-neon-cyan/[0.08] bg-[#0a0a1a] p-4">
+            <div className="overflow-x-auto thin-scrollbar rounded-xl border border-neon-cyan/[0.08] bg-[#0a0a1a] p-4 pr-7">
               <div className="flex min-w-max gap-6">
                 {rounds.map((roundMatches, index) => (
                   <BracketColumn
                     key={index}
                     title={roundLabel(index + 1, maxRound)}
                     matches={roundMatches}
+                    isLastRound={index === rounds.length - 1}
+                    showChampionStub={rounds.length > 1}
                     isAdmin={isAdmin && tournament.status === 'IN_PROGRESS'}
                     onSetWinner={handleSetWinner}
                     busyMatchId={busy ? busy : null}
-                    tournamentId={tournamentId}
                   />
                 ))}
               </div>

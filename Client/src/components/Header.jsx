@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleUser, Gamepad2, LogIn, LogOut, Shield, Swords, User } from 'lucide-react';
+import {
+  Bell,
+  ChevronDown,
+  CircleUser,
+  LogIn,
+  LogOut,
+  Palette,
+  Shield,
+  ShoppingCart,
+  User,
+  Wallet
+} from 'lucide-react';
 
 function MenuItem({ icon: Icon, label, onClick, danger = false }) {
   return (
@@ -62,17 +73,13 @@ function ProfileMenu({ user, avatarUrl, isAdmin, onLogout }) {
         aria-haspopup="menu"
         aria-expanded={open}
         title="Account menu"
-        className={`grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full border transition ${
-          open
-            ? 'border-neon-cyan/60 shadow-[0_0_14px_rgba(0,229,255,0.35)]'
-            : 'border-neon-cyan/25 hover:border-neon-cyan/50 hover:shadow-[0_0_10px_rgba(0,229,255,0.2)]'
-        }`}
+        className="block h-8 w-8 shrink-0 overflow-hidden rounded-full border border-zinc-600/60 transition hover:border-zinc-400"
       >
         {avatarUrl ? (
           <img src={avatarUrl} alt="My avatar" className="h-full w-full object-cover" />
         ) : (
           <span className="grid h-full w-full place-items-center bg-panelSoft">
-            <CircleUser className="h-6 w-6 text-neon-cyan/80" />
+            <CircleUser className="h-5 w-5 text-zinc-400" />
           </span>
         )}
       </button>
@@ -121,53 +128,197 @@ function ProfileMenu({ user, avatarUrl, isAdmin, onLogout }) {
   );
 }
 
+function NavDropdown({ label, items }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocMouseDown(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1 text-[13px] font-medium text-zinc-300 transition hover:text-zinc-50"
+      >
+        {label}
+        <ChevronDown className={`h-3.5 w-3.5 text-zinc-500 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="animate-pop absolute left-0 top-full z-50 mt-3 w-44 overflow-hidden rounded-lg border border-zinc-700/60 bg-[#151519] py-1 shadow-2xl"
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                item.onClick();
+              }}
+              className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[13px] text-zinc-300 transition hover:bg-zinc-700/40 hover:text-zinc-50"
+            >
+              {item.icon && <item.icon className="h-3.5 w-3.5 text-zinc-500" />}
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
- * Shared global header used by every normal user-facing page so the account
- * button appears consistently. Page-specific action buttons are passed as
- * children and render to the left of the profile menu.
+ * Shared global navbar styled after the reference design: slim dark bar with a
+ * square logo tile, inline nav links (Tools has a dropdown), and a right-side
+ * cluster with balance pill, currency/language selectors, icon buttons and the
+ * round account button. Page-specific action buttons are passed as children and
+ * render to the left of the profile menu.
  */
 export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, children }) {
+  const go = (hash) => () => {
+    window.location.hash = hash;
+  };
+
   return (
-    <header className="sticky top-0 z-20 border-b border-neon-cyan/[0.08] bg-[#050510]/90 backdrop-blur-md">
-      <div className="mx-auto grid max-w-[1400px] grid-cols-[1fr_auto_1fr] items-center gap-x-4 gap-y-2 px-5 py-3">
-        <div className="flex min-w-0 items-center justify-start">
+    <header className="sticky top-0 z-20 border-b border-zinc-800/80 bg-[#101014]">
+      <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-6 px-4">
+        {/* Logo: square tile */}
+        <button
+          type="button"
+          onClick={() => { window.location.hash = ''; }}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-800 text-zinc-50 transition hover:bg-zinc-700"
+          title="Home"
+        >
+          <span className="text-lg font-black leading-none">f</span>
+        </button>
+
+        {/* Primary nav */}
+        <nav className="hidden min-w-0 items-center gap-7 md:flex">
           <button
             type="button"
             onClick={() => { window.location.hash = ''; }}
-            className="flex items-center gap-3 text-left"
-            title="Home"
+            className="text-[13px] font-medium text-zinc-300 transition hover:text-zinc-50"
           >
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-neon-cyan text-zinc-950">
-              <Gamepad2 className="h-5 w-5" />
-            </span>
-            <span className="hidden sm:block">
-              <span className="block text-base font-bold tracking-tight text-zinc-50">Club Playtime</span>
-              <span className="block text-[11px] text-mist">Racket Rivals tracker</span>
-            </span>
+            Market
           </button>
-        </div>
-
-        {/* Center: Tournaments navigation */}
-        <div className="flex items-center justify-center">
           <button
             type="button"
-            onClick={() => { window.location.hash = 'tournaments'; }}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-300 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100"
+            onClick={() => { window.location.hash = ''; }}
+            className="text-[13px] font-medium text-zinc-300 transition hover:text-zinc-50"
           >
-            <Swords className="h-4 w-4 text-neon-purple" />
-            Tournaments
+            Database
           </button>
-        </div>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = ''; }}
+            className="text-[13px] font-medium text-zinc-300 transition hover:text-zinc-50"
+          >
+            Loadout
+          </button>
+          <NavDropdown
+            label="Tools"
+            items={[
+              { label: 'Tournaments', icon: User, onClick: go('tournaments') },
+              { label: 'Tracker', onClick: go('') },
+              ...(isAdmin ? [{ label: 'Admin Panel', icon: Shield, onClick: go('admin-users') }] : [])
+            ]}
+          />
+        </nav>
 
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-          {children}
+        {/* Mobile fallback for tournaments (nav hidden below md) */}
+        <button
+          type="button"
+          onClick={() => { window.location.hash = 'tournaments'; }}
+          className="text-[13px] font-medium text-zinc-300 transition hover:text-zinc-50 md:hidden"
+        >
+          Tournaments
+        </button>
+
+        {/* Right cluster */}
+        <div className="ml-auto flex min-w-0 items-center gap-3">
+          {/* Page-specific actions (join requests, check now, ...) */}
+          <div className="hidden min-w-0 items-center gap-2 lg:flex">
+            {children}
+          </div>
+
+          {/* Balance pill */}
+          <div className="hidden items-center sm:flex">
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-md bg-zinc-800/80 px-3 text-[13px] font-bold text-zinc-50">
+              <Wallet className="h-3.5 w-3.5 text-zinc-400" />
+              $8.08
+            </span>
+          </div>
+
+          {/* Currency selector */}
+          <button
+            type="button"
+            className="hidden items-center gap-1 text-[13px] font-bold text-zinc-50 transition hover:text-zinc-300 sm:inline-flex"
+            title="Currency"
+          >
+            USD
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
+
+          {/* Language selector */}
+          <button
+            type="button"
+            className="hidden items-center gap-1 text-[13px] font-bold text-zinc-50 transition hover:text-zinc-300 sm:inline-flex"
+            title="Language"
+          >
+            EN
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
+
+          {/* Icon buttons */}
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-md text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-50"
+            title="Cart"
+          >
+            <ShoppingCart className="h-[18px] w-[18px]" />
+          </button>
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-md text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-50"
+            title="Notifications"
+          >
+            <Bell className="h-[18px] w-[18px]" />
+          </button>
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-md text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-50"
+            title="Theme"
+          >
+            <Palette className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Account */}
           {user ? (
             <ProfileMenu user={user} avatarUrl={avatarUrl} isAdmin={isAdmin} onLogout={onLogout} />
           ) : (
             <button
               type="button"
               onClick={onSignIn}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-neon-cyan px-3 text-sm font-semibold text-zinc-950 transition hover:bg-neon-cyan/80"
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-zinc-800 px-3 text-[13px] font-semibold text-zinc-50 transition hover:bg-zinc-700"
             >
               <LogIn className="h-4 w-4" />
               Sign In

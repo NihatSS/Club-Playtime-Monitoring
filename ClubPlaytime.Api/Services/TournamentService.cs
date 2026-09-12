@@ -353,11 +353,13 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
             }
             if (match.Status == TournamentMatchStatus.Completed)
             {
+                // Clear downstream BEFORE wiping the winner: the slot lookup
+                // uses match.WinnerTeamId.
+                await ClearDownstreamSlotAsync(tournament, match);
                 match.Status = TournamentMatchStatus.Pending;
                 match.WinnerId = null;
                 match.WinnerTeamId = null;
                 match.PlayedAt = null;
-                await ClearDownstreamSlotAsync(tournament, match);
             }
         }
 
@@ -715,7 +717,9 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
 
                 if (nextWinner != null && nextWinner != nextSlot1 && nextWinner != nextSlot2)
                 {
-                    // Winner no longer among the entrants — reset the next match.
+                    // Winner no longer among the entrants — clear the stale
+                    // advancement of that old winner first, then reset the match.
+                    await ClearDownstreamSlotAsync(tournament, nextMatch, nextWinner);
                     nextMatch.WinnerId = null;
                     nextMatch.WinnerTeamId = null;
                     nextMatch.Status = TournamentMatchStatus.Pending;
@@ -761,10 +765,10 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
 
             if (match.WinnerTeamId != null && match.WinnerTeamId != participant1Id && match.WinnerTeamId != participant2Id)
             {
+                await ClearDownstreamSlotAsync(tournament, match);
                 match.WinnerTeamId = null;
                 match.Status = TournamentMatchStatus.Pending;
                 match.PlayedAt = null;
-                await ClearDownstreamSlotAsync(tournament, match);
             }
         }
         else
@@ -792,17 +796,17 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
 
             if (match.WinnerId != null && match.WinnerId != participant1Id && match.WinnerId != participant2Id)
             {
+                await ClearDownstreamSlotAsync(tournament, match);
                 match.WinnerId = null;
                 match.Status = TournamentMatchStatus.Pending;
                 match.PlayedAt = null;
-                await ClearDownstreamSlotAsync(tournament, match);
             }
         }
 
         await dbContext.SaveChangesAsync();
     }
 
-    private async Task ClearDownstreamSlotAsync(Tournament tournament, TournamentMatch match)
+    private async Task ClearDownstreamSlotAsync(Tournament tournament, TournamentMatch match, int? downstreamIdOverride = null)
     {
         if (match.NextMatchId == null)
         {
@@ -818,7 +822,7 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
 
         var isTeamBracket = tournament.TeamMode != TournamentTeamMode.Solo;
         var slot = match.NextMatchSlot == 2 ? 2 : 1;
-        var downstreamId = isTeamBracket ? match.WinnerTeamId : match.WinnerId;
+        var downstreamId = downstreamIdOverride ?? (isTeamBracket ? match.WinnerTeamId : match.WinnerId);
         if (downstreamId != null)
         {
             if (isTeamBracket)
@@ -848,8 +852,9 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
 
     /// <summary>
     /// Disqualifies a participant: removes them from their team, from any pending
-    /// matches, and awards pending opponents a walkover. If they already won
-    /// matches, the affected downstream slots are cleared.
+    /// matches, and awards pending opponents a walkover. Walkover winners are
+    /// pushed into their next-round slot (same as BYE handling), and matches the
+    /// participant had already won are reset with downstream slots cleared.
     /// </summary>
     public async Task DisqualifyParticipantAsync(Tournament tournament, int participantId, string? reason)
     {
@@ -860,7 +865,8 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
         participant.IsDisqualified = true;
         participant.DisqualifiedReason = reason is { Length: > 200 } ? reason[..200] : reason;
 
-        // Remove from team.
+        // Remove from team, remembering it so the team's bracket entries are cleaned up.
+        var formerTeamId = participant.TeamId;
         participant.TeamId = null;
 
         // Walk over their pending matches: opponent advances automatically.
@@ -870,35 +876,99 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
 
         foreach (var match in matches.Where(m => m.Status != TournamentMatchStatus.Completed))
         {
+            var advancedWinner = false;
             if (match.Participant1Id == participantId && match.Participant2Id != null)
             {
                 AdvanceWinner(match, winnerParticipantId: match.Participant2Id);
                 match.Note = "Opponent disqualified — auto-advanced.";
+                advancedWinner = true;
             }
             else if (match.Participant2Id == participantId && match.Participant1Id != null)
             {
                 AdvanceWinner(match, winnerParticipantId: match.Participant1Id);
                 match.Note = "Opponent disqualified — auto-advanced.";
+                advancedWinner = true;
             }
-            else if (match.Participant1Id == participantId || match.Participant2Id == participantId)
+            else if (formerTeamId != null && match.Team1Id == formerTeamId && match.Team2Id != null)
+            {
+                AdvanceWinner(match, winnerTeamId: match.Team2Id);
+                match.Note = "Opponent's team disqualified — auto-advanced.";
+                advancedWinner = true;
+            }
+            else if (formerTeamId != null && match.Team2Id == formerTeamId && match.Team1Id != null)
+            {
+                AdvanceWinner(match, winnerTeamId: match.Team1Id);
+                match.Note = "Opponent's team disqualified — auto-advanced.";
+                advancedWinner = true;
+            }
+            else if (match.Participant1Id == participantId
+                || match.Participant2Id == participantId
+                || (formerTeamId != null && (match.Team1Id == formerTeamId || match.Team2Id == formerTeamId)))
             {
                 // No opponent to advance — clear the slot and downstream effects.
                 if (match.Participant1Id == participantId) match.Participant1Id = null;
                 if (match.Participant2Id == participantId) match.Participant2Id = null;
+                if (formerTeamId != null)
+                {
+                    if (match.Team1Id == formerTeamId) match.Team1Id = null;
+                    if (match.Team2Id == formerTeamId) match.Team2Id = null;
+                }
                 await ClearDownstreamSlotAsync(tournament, match);
+            }
+
+            // The walkover winner must actually move into the next-round slot,
+            // exactly like a recorded winner does — otherwise the bracket shows
+            // a win that never advances (reported bug).
+            if (advancedWinner && match.NextMatchId != null)
+            {
+                var next = matches.FirstOrDefault(m => m.Id == match.NextMatchId);
+                if (next != null && next.Status != TournamentMatchStatus.Completed)
+                {
+                    if (match.WinnerTeamId != null)
+                    {
+                        if (match.NextMatchSlot == 2) next.Team2Id = match.WinnerTeamId;
+                        else next.Team1Id = match.WinnerTeamId;
+                    }
+                    else if (match.WinnerId != null)
+                    {
+                        if (match.NextMatchSlot == 2) next.Participant2Id = match.WinnerId;
+                        else next.Participant1Id = match.WinnerId;
+                    }
+                }
             }
         }
 
-        // Completed matches the participant won: clear downstream effects.
-        foreach (var match in matches.Where(m => m.Status == TournamentMatchStatus.Completed && m.WinnerId == participantId))
+        // Completed matches the participant (or their former team) won:
+        // clear downstream effects. NOTE: the downstream slot must be cleared
+        // while match.Winner*Id still holds the winner — ClearDownstreamSlotAsync
+        // locates the slot via that id.
+        foreach (var match in matches.Where(m => m.Status == TournamentMatchStatus.Completed
+            && (m.WinnerId == participantId || (formerTeamId != null && m.WinnerTeamId == formerTeamId))))
         {
+            await ClearDownstreamSlotAsync(tournament, match);
             match.WinnerId = null;
+            match.WinnerTeamId = null;
             match.Status = TournamentMatchStatus.Pending;
             match.PlayedAt = null;
-            await ClearDownstreamSlotAsync(tournament, match);
         }
 
         await dbContext.SaveChangesAsync();
+
+        // A walkover may have decided the final — complete the tournament if so.
+        if (tournament.Status == TournamentStatus.InProgress
+            && matches.Any(m => m.NextMatchId == null
+                && m.Status == TournamentMatchStatus.Completed
+                && (m.WinnerId != null || m.WinnerTeamId != null)))
+        {
+            try
+            {
+                await TryCompleteTournamentAsync(tournament);
+            }
+            catch (TournamentRuleException)
+            {
+                // Final not fully decided yet — nothing to do.
+            }
+        }
     }
 
     /// <summary>Removes a participant from the tournament entirely (admin).</summary>
@@ -925,10 +995,10 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
             if (match.Participant2Id == participantId) match.Participant2Id = null;
             if (match.WinnerId == participantId)
             {
+                await ClearDownstreamSlotAsync(tournament, match);
                 match.WinnerId = null;
                 match.Status = TournamentMatchStatus.Pending;
                 match.PlayedAt = null;
-                await ClearDownstreamSlotAsync(tournament, match);
             }
         }
 
