@@ -27,8 +27,19 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
 
     public DbSet<TournamentPrize> TournamentPrizes => Set<TournamentPrize>();
 
+    public DbSet<Announcement> Announcements => Set<Announcement>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Announcement>(entity =>
+        {
+            entity.Property(a => a.Title).HasMaxLength(120).IsRequired();
+            entity.Property(a => a.Body).HasMaxLength(500);
+            entity.Property(a => a.LinkUrl).HasMaxLength(300);
+            entity.Property(a => a.CreatedBy).HasMaxLength(50).IsRequired();
+            entity.HasIndex(a => a.CreatedAt);
+        });
+
         modelBuilder.Entity<Player>(entity =>
         {
             entity.HasIndex(player => player.RobloxUserId).IsUnique();

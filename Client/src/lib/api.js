@@ -188,6 +188,12 @@ export const api = {
   getMyJoinRequestAuthenticated: () => request('/api/joinrequest/mine-auth'),
   updateJoinRequest: (id, body) => request(`/api/joinrequest/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
 
+  // Announcements (public read, admin write)
+  announcements: (limit = 20) => request(`/api/announcements?limit=${limit}`),
+  createAnnouncement: (body) =>
+    request('/api/announcements', { method: 'POST', body: JSON.stringify(body) }),
+  deleteAnnouncement: (id) => request(`/api/announcements/${id}`, { method: 'DELETE' }),
+
   // Join requests (admin)
   getJoinRequests: (status) => request(`/api/joinrequest${status ? `?status=${status}` : ''}`),
   reviewJoinRequest: (id, status) => request(`/api/joinrequest/${id}/review`, { method: 'PUT', body: JSON.stringify({ status }) }),

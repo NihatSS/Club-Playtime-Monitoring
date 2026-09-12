@@ -37,6 +37,7 @@ const TONE_STYLES = {
   cyan: 'bg-neon-cyan/10 text-neon-cyan',
   green: 'bg-emerald-400/10 text-emerald-300',
   amber: 'bg-amber-400/10 text-amber-300',
+  purple: 'bg-neon-purple/15 text-neon-purple',
   zinc: 'bg-zinc-700/40 text-zinc-300'
 };
 
@@ -131,16 +132,16 @@ export function buildNotifications(tournaments, now = Date.now()) {
     .slice(0, 12);
 }
 
-function NotificationItem({ item, now, onNavigate }) {
+function NotificationItem({ item, now, onNavigate, onDelete }) {
   const Icon = item.icon;
   return (
     <button
       type="button"
       onClick={() => {
-        window.location.hash = item.href;
+        if (item.href) window.location.hash = item.href;
         onNavigate?.();
       }}
-      className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-neon-cyan/[0.05]"
+      className="group flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-neon-cyan/[0.05]"
     >
       <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${TONE_STYLES[item.tone] ?? TONE_STYLES.zinc}`}>
         <Icon className="h-4 w-4" />
@@ -150,12 +151,26 @@ function NotificationItem({ item, now, onNavigate }) {
         <span className="mt-0.5 block text-xs leading-snug text-mist">{item.body}</span>
         <span className="mt-1 block text-[10px] uppercase tracking-wider text-zinc-500">{relativeTime(item.time, now)}</span>
       </span>
+      {onDelete && (
+        <span
+          role="button"
+          tabIndex={-1}
+          title="Delete announcement"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="ml-auto hidden h-6 w-6 shrink-0 place-items-center rounded text-zinc-500 transition hover:bg-red-400/10 hover:text-red-300 group-hover:grid"
+        >
+          <X className="h-3.5 w-3.5" />
+        </span>
+      )}
     </button>
   );
 }
 
-/** Bell button + notifications dropdown, fed by live tournament data. */
-function NotificationBell() {
+/** Bell button + notifications dropdown, fed by live tournament data and admin announcements. */
+function NotificationBell({ isAdmin }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [seenAt, setSeenAt] = useState(() => Number(localStorage.getItem(NOTIFICATIONS_SEEN_KEY)) || 0);
@@ -163,8 +178,24 @@ function NotificationBell() {
 
   useEffect(() => {
     let cancelled = false;
-    api.tournaments()
-      .then((data) => { if (!cancelled) setItems(buildNotifications(data)); })
+    Promise.all([api.tournaments(), api.announcements(12).catch(() => [])])
+      .then(([tournaments, announcements]) => {
+        if (cancelled) return;
+        const tournamentItems = buildNotifications(tournaments);
+        // Admin announcements are pinned first (newest first within the group).
+        const announcementItems = (announcements ?? []).map((a) => ({
+          id: `a-${a.id}`,
+          kind: 'announcement',
+          icon: Megaphone,
+          tone: 'purple',
+          title: a.title,
+          body: a.body || (a.linkUrl ? 'Tap to open.' : ''),
+          time: a.createdAt,
+          href: a.linkUrl || null,
+          announcementId: a.id
+        }));
+        setItems([...announcementItems, ...tournamentItems].slice(0, 14));
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [open]);
@@ -188,6 +219,8 @@ function NotificationBell() {
   // Unread = something happened (or was created) after the last time the
   // dropdown was opened. Future-scheduled items ("starts soon") don't keep
   // the dot lit forever — only events that already occurred count.
+  const [deletingId, setDeletingId] = useState(null);
+
   const hasUnread = items.some((it) => {
     const ts = new Date(it.time).getTime();
     return ts <= now && ts > seenAt;
@@ -242,10 +275,32 @@ function NotificationBell() {
                 <span className="text-xs text-zinc-600">Tournament news and events will show up here.</span>
               </div>
             ) : (
-              items.map((item) => <NotificationItem key={item.id} item={item} now={now} onNavigate={() => setOpen(false)} />)
+              items.map((item) => (
+                <NotificationItem
+                  key={item.id}
+                  item={item}
+                  now={now}
+                  onNavigate={() => setOpen(false)}
+                  onDelete={isAdmin && item.kind === 'announcement'
+                    ? async () => {
+                        setDeletingId(item.id);
+                        try {
+                          await api.deleteAnnouncement(item.announcementId);
+                          setItems((list) => list.filter((it) => it.id !== item.id));
+                        } catch {
+                          // Leave the item in place if the delete failed.
+                        } finally {
+                          setDeletingId(null);
+                        }
+                      }
+                    : undefined}
+                />
+              ))
             )}
           </div>
           <div className="h-px bg-neon-cyan/10" />
+          {isAdmin && <AnnouncementComposer onPosted={() => { setOpen(false); setOpen(true); }} />}
+          {isAdmin && <div className="h-px bg-neon-cyan/10" />}
           <button
             type="button"
             onClick={() => {
@@ -259,6 +314,91 @@ function NotificationBell() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Admin-only inline form to post a new announcement. */
+function AnnouncementComposer({ onPosted }) {
+  const [expanded, setExpanded] = useState(false);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="block w-full px-4 py-2.5 text-center text-xs font-semibold text-neon-purple transition hover:bg-neon-purple/[0.06]"
+      >
+        + Post announcement
+      </button>
+    );
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.createAnnouncement({ title: title.trim(), body: body.trim(), linkUrl: linkUrl.trim() });
+      setTitle('');
+      setBody('');
+      setLinkUrl('');
+      setExpanded(false);
+      onPosted?.();
+    } catch (err) {
+      setError(err.message || 'Failed to post.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-2 px-4 py-3">
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Title (required)"
+        maxLength={120}
+        className="w-full rounded-md border border-neon-cyan/[0.12] bg-ink px-2.5 py-1.5 text-xs text-zinc-50 placeholder:text-zinc-500 focus:border-neon-purple/40 transition"
+      />
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="Message (optional)"
+        rows={2}
+        maxLength={500}
+        className="w-full resize-none rounded-md border border-neon-cyan/[0.12] bg-ink px-2.5 py-1.5 text-xs text-zinc-50 placeholder:text-zinc-500 focus:border-neon-purple/40 transition"
+      />
+      <input
+        value={linkUrl}
+        onChange={(e) => setLinkUrl(e.target.value)}
+        placeholder="Link, e.g. tournaments/3 (optional)"
+        maxLength={300}
+        className="w-full rounded-md border border-neon-cyan/[0.12] bg-ink px-2.5 py-1.5 text-xs text-zinc-50 placeholder:text-zinc-500 focus:border-neon-purple/40 transition"
+      />
+      {error && <div className="text-[11px] text-red-300">{error}</div>}
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={busy || !title.trim()}
+          className="rounded-md bg-neon-purple px-3 py-1.5 text-xs font-bold text-white transition hover:bg-neon-purple/80 disabled:opacity-50"
+        >
+          {busy ? 'Posting…' : 'Post'}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setExpanded(false); setError(''); }}
+          className="rounded-md border border-zinc-700/60 px-3 py-1.5 text-xs font-medium text-zinc-400 transition hover:text-zinc-200"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -557,7 +697,7 @@ export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, c
           </div>
 
           {/* Notifications */}
-          <NotificationBell />
+          <NotificationBell isAdmin={isAdmin} />
 
           {/* Account */}
           {user ? (
