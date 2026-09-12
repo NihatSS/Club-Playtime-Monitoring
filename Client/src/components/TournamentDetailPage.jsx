@@ -189,11 +189,10 @@ function BracketMatchCard({ match, isAdmin, onSetWinner, busy }) {
 function InfoTabs({ tournament }) {
   const [tab, setTab] = useState('rules');
 
-  const rules = (tournament.rulesText ?? tournament.description ?? '')
+  const rules = (tournament.rulesText ?? '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
-  const description = tournament.description?.trim();
 
   const prizes = [...tournament.prizes].sort((a, b) => a.placement - b.placement);
   const prizeInfo = tournament.prizeInfo?.trim();
@@ -223,20 +222,15 @@ function InfoTabs({ tournament }) {
 
       <div className="p-4">
         {tab === 'rules' ? (
-          rules.length > 0 || description ? (
-            <div className="space-y-3">
-              {description && <p className="whitespace-pre-line text-sm leading-relaxed text-zinc-300">{description}</p>}
-              {rules.length > 0 && (
-                <ul className="space-y-1.5">
-                  {rules.map((rule, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-zinc-300">
-                      <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-zinc-500" />
-                      <span>{rule.replace(/^[•\-*]\s*/, '')}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          rules.length > 0 ? (
+            <ul className="space-y-1.5">
+              {rules.map((rule, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-zinc-300">
+                  <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-zinc-500" />
+                  <span>{rule.replace(/^[•\-*]\s*/, '')}</span>
+                </li>
+              ))}
+            </ul>
           ) : (
             <div className="text-sm text-zinc-500">No rules have been published for this tournament.</div>
           )
