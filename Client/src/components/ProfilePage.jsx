@@ -212,7 +212,6 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
 
   // Banner picker state (own profile only)
   const [bannerEditing, setBannerEditing] = useState(false);
-  const [bannerInput, setBannerInput] = useState('');
   const [bannerBusy, setBannerBusy] = useState(false);
   const [bannerUploading, setBannerUploading] = useState(false);
   const [bannerFileVersion, setBannerFileVersion] = useState(null);
@@ -309,16 +308,14 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     }
   }
 
-  async function handleBannerSave(reset = false) {
+  async function handleBannerReset() {
     setBannerBusy(true);
     setError('');
     setNotice('');
     try {
-      const value = reset ? '' : bannerInput.trim();
-      const result = await api.updateBanner(value);
-      setNotice(result.message ?? 'Banner updated.');
+      const result = await api.updateBanner('');
+      setNotice(result.message ?? 'Banner reset to default.');
       setBannerEditing(false);
-      setBannerInput('');
       await loadProfile();
     } catch (err) {
       setError(err.message);
@@ -546,7 +543,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
           <div className="space-y-5">
             {/* ─── HERO BANNER ─── */}
             <div className="relative overflow-hidden rounded-xl border border-line shadow-glow">
-              {/* Custom banner image (uploaded file or URL, if set), otherwise the default gradient */}
+              {/* Custom banner image (uploaded file or legacy URL, if set), otherwise the default gradient */}
               {heroImage ? (
                 <>
                   <div className="absolute inset-0 bg-gradient-to-br from-[#221a4d] via-[#1b1440] to-[#0a0a1a]" />
@@ -586,28 +583,11 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                     <Upload className="h-3.5 w-3.5" />
                     {bannerUploading ? 'Uploading…' : 'Upload from your PC'}
                   </button>
-                  <div className="mt-2 text-[10px] text-zinc-500">or paste an image URL</div>
-                  <input
-                    type="url"
-                    value={bannerInput}
-                    onChange={(e) => setBannerInput(e.target.value)}
-                    placeholder="https://example.com/banner.jpg"
-                    className="mt-1 w-full rounded-md border border-line bg-ink px-2.5 py-1.5 text-xs text-zinc-50 placeholder:text-zinc-500 focus:border-neon-cyan/50 focus:outline-none"
-                  />
                   <div className="mt-2 flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleBannerSave(false)}
-                      disabled={bannerBusy || !bannerInput.trim()}
-                      className="inline-flex items-center gap-1 rounded-md bg-neon-cyan px-2.5 py-1 text-[11px] font-bold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-50"
-                    >
-                      <Save className="h-3 w-3" />
-                      {bannerBusy ? 'Saving…' : 'Save URL'}
-                    </button>
-                    {profile.bannerUrl && (
+                    {(profile.bannerUrl || profile.bannerImageVersion) && (
                       <button
                         type="button"
-                        onClick={() => handleBannerSave(true)}
+                        onClick={handleBannerReset}
                         disabled={bannerBusy}
                         className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100 disabled:opacity-50"
                       >
@@ -617,7 +597,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                     )}
                     <button
                       type="button"
-                      onClick={() => { setBannerEditing(false); setBannerInput(''); }}
+                      onClick={() => setBannerEditing(false)}
                       className="ml-auto text-[11px] text-zinc-500 transition hover:text-zinc-300"
                     >
                       Cancel
@@ -627,12 +607,12 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
               ) : (
                 <button
                   type="button"
-                  onClick={() => { setBannerEditing(true); setBannerInput(profile.bannerUrl ?? ''); }}
+                  onClick={() => setBannerEditing(true)}
                   title="Set or change banner image"
                   className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-200 backdrop-blur transition hover:bg-black/60"
                 >
                   <ImagePlus className="h-3.5 w-3.5" />
-                  {profile.bannerUrl ? 'Change banner' : 'Add banner'}
+                  {(profile.bannerUrl || profile.bannerImageVersion) ? 'Change banner' : 'Add banner'}
                 </button>
               )}
 
