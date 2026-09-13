@@ -111,6 +111,7 @@ public sealed class DiscordBotService : IHostedService
         _client.LatencyUpdated += OnLatencyUpdatedAsync;
 
         await _interactions.AddModuleAsync<PlaytimeModule>(_services);
+        await _interactions.AddModuleAsync<ProgressModule>(_services);
 
         var token = _configuration["Discord:Token"];
         if (string.IsNullOrWhiteSpace(token))

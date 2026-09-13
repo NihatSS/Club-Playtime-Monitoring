@@ -36,6 +36,18 @@ public sealed class PlaytimeApiClient(HttpClient httpClient, IConfiguration conf
             $"dashboard/leaderboard?period={period}", cancellationToken);
     }
 
+    /// <summary>Statistics for one player from the same data the website uses.</summary>
+    public async Task<PlayerStatsDto?> GetPlayerStatsAsync(int playerId, CancellationToken cancellationToken = default)
+    {
+        return await GetAsync<PlayerStatsDto>($"stats/players/{playerId}", cancellationToken);
+    }
+
+    /// <summary>Achievements (unlocked + progress) for one player from the same data the website uses.</summary>
+    public async Task<PlayerAchievementsDto?> GetPlayerAchievementsAsync(int playerId, CancellationToken cancellationToken = default)
+    {
+        return await GetAsync<PlayerAchievementsDto>($"stats/players/{playerId}/achievements", cancellationToken);
+    }
+
     /// <summary>
     /// GETs a JSON resource from the API. Returns null when the API answers 404 (resource
     /// genuinely not found), and throws <see cref="ApiUnavailableException"/> when the API
@@ -220,5 +232,44 @@ public sealed class LeaderboardPlayerDto
     [JsonPropertyName("playSeconds")] public long PlaySeconds { get; set; }
     [JsonPropertyName("totalPlaySeconds")] public long TotalPlaySeconds { get; set; }
     [JsonPropertyName("discordUserId")] public string? DiscordUserId { get; set; }
+}
+
+/// <summary>Streak/statistics subset of the website's PlayerStatsDto (camelCase JSON, as served).</summary>
+public sealed class PlayerStatsDto
+{
+    [JsonPropertyName("playerId")] public int PlayerId { get; set; }
+    [JsonPropertyName("username")] public string Username { get; set; } = string.Empty;
+    [JsonPropertyName("avatarUrl")] public string? AvatarUrl { get; set; }
+    [JsonPropertyName("currentStreak")] public int CurrentStreak { get; set; }
+    [JsonPropertyName("longestStreak")] public int LongestStreak { get; set; }
+    [JsonPropertyName("daysPlayed")] public int DaysPlayed { get; set; }
+
+    /// <summary>UTC calendar day (e.g. "2026-09-12"), null when the player has no playtime.</summary>
+    [JsonPropertyName("lastActiveDate")] public string? LastActiveDate { get; set; }
+}
+
+/// <summary>One achievement with unlock state and progress, as served by the website.</summary>
+public sealed class AchievementDto
+{
+    [JsonPropertyName("key")] public string Key { get; set; } = string.Empty;
+    [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
+    [JsonPropertyName("description")] public string Description { get; set; } = string.Empty;
+    [JsonPropertyName("icon")] public string Icon { get; set; } = string.Empty;
+    [JsonPropertyName("unlocked")] public bool Unlocked { get; set; }
+    [JsonPropertyName("unlockedAt")] public DateTime? UnlockedAt { get; set; }
+    [JsonPropertyName("detail")] public string? Detail { get; set; }
+    [JsonPropertyName("progressLabel")] public string ProgressLabel { get; set; } = string.Empty;
+    [JsonPropertyName("progressPercent")] public int ProgressPercent { get; set; }
+}
+
+/// <summary>All achievements for one player, unlocked first (same shape as the website's API).</summary>
+public sealed class PlayerAchievementsDto
+{
+    [JsonPropertyName("playerId")] public int PlayerId { get; set; }
+    [JsonPropertyName("username")] public string Username { get; set; } = string.Empty;
+    [JsonPropertyName("avatarUrl")] public string? AvatarUrl { get; set; }
+    [JsonPropertyName("unlockedCount")] public int UnlockedCount { get; set; }
+    [JsonPropertyName("totalCount")] public int TotalCount { get; set; }
+    [JsonPropertyName("achievements")] public List<AchievementDto> Achievements { get; set; } = new();
 }
 
