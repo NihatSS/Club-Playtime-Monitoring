@@ -14,6 +14,7 @@ import {
   Save,
   ShieldCheck,
   Trash2,
+  TrendingUp,
   Trophy,
   Unlink,
   User
@@ -607,6 +608,52 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                 <StatTile label="Total" value={formatDuration(player.totalPlaySeconds)} color="text-emerald-400" />
                 <StatTile label="Weekly Rank" value={profile.weeklyLeaderboardPosition ? `#${profile.weeklyLeaderboardPosition}` : '—'} />
                 <StatTile label="All-Time Rank" value={profile.totalLeaderboardPosition ? `#${profile.totalLeaderboardPosition}` : '—'} />
+              </div>
+
+              {/* Progress summary: streaks + achievements (real tracker data) */}
+              {profile.progress && (
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <StatTile
+                    label="Current Streak"
+                    value={`${profile.progress.currentStreak}d`}
+                    color="text-neon-amber"
+                  />
+                  <StatTile
+                    label="Longest Streak"
+                    value={`${profile.progress.longestStreak}d`}
+                    color="text-neon-green"
+                  />
+                  <StatTile
+                    label="Achievements"
+                    value={`${profile.progress.achievementsUnlocked}/${profile.progress.totalAchievements}`}
+                    color="text-neon-amber"
+                  />
+                  <StatTile
+                    label="Current Rank"
+                    value={profile.progress.totalRank ? `#${profile.progress.totalRank}` : '—'}
+                    color="text-neon-cyan"
+                  />
+                </div>
+              )}
+
+              {/* Quick links to the detailed statistics and achievements pages */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => { window.location.hash = 'stats'; }}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-4 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]"
+                >
+                  <TrendingUp className="h-4 w-4 text-neon-cyan" />
+                  Full statistics
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.hash = 'achievements'; }}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-4 text-sm font-medium text-zinc-200 transition hover:bg-neon-cyan/[0.06]"
+                >
+                  <Trophy className="h-4 w-4 text-neon-amber" />
+                  View achievements
+                </button>
               </div>
             </>
           ) : joinRequest ? (

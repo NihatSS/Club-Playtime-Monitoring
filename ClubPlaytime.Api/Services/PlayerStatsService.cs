@@ -11,7 +11,8 @@ public sealed class PlayerStatsService(
     IDailyPlaytimeRepository dailyPlaytimeRepository,
     IActivityRepository activityRepository,
     IRobloxAvatarClient avatarClient,
-    IOptionsMonitor<MonitoringOptions> options) : IPlayerStatsService
+    IOptionsMonitor<MonitoringOptions> options,
+    PlayerProgressService progressService) : IPlayerStatsService
 {
     public async Task<IReadOnlyList<PlayerDto>> GetPlayersAsync(CancellationToken cancellationToken = default)
     {
@@ -52,6 +53,18 @@ public sealed class PlayerStatsService(
         var weeklySeconds = dailyRows.Where(row => row.Date >= weekFrom).Sum(row => row.PlaySeconds);
         var monthlySeconds = dailyRows.Sum(row => row.PlaySeconds);
 
+        // Compact progress summary (streaks, achievements, rank). Kept separate
+        // from the main query chain so it never breaks the details response.
+        PlayerProgressSummaryDto? progress = null;
+        try
+        {
+            progress = await progressService.GetSummaryAsync(player.Id, cancellationToken);
+        }
+        catch (Exception progressEx)
+        {
+            // Progress summary is additive; details must still render without it.
+        }
+
         return new PlayerDetailsDto(
             player.Id,
             player.Username,
@@ -69,7 +82,10 @@ public sealed class PlayerStatsService(
             player.DiscordUserId,
             player.CreatedAt,
             last30Days,
-            recentActivity.Select(ToActivityDto).ToList());
+            recentActivity.Select(ToActivityDto).ToList())
+        {
+            Progress = progress
+        };
     }
 
     public async Task<PlayerDto> AddPlayerAsync(AddPlayerRequest request, CancellationToken cancellationToken = default)
@@ -144,6 +160,18 @@ public sealed class PlayerStatsService(
         }, cancellationToken);
 
         await playerRepository.SaveChangesAsync(cancellationToken);
+
+        // Manual adjustments change real playtime days, so streaks and
+        // achievements must be re-derived from the corrected data.
+        try
+        {
+            await progressService.UpdatePlayerProgressAsync(playerId, cancellationToken);
+        }
+        catch (Exception progressEx)
+        {
+            // Progress tracking must never break the adjustment itself.
+        }
+
         return await GetPlayerDetailsAsync(playerId, cancellationToken);
     }
 

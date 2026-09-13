@@ -28,6 +28,9 @@ public sealed class MyProfileResponse
     public int? WeeklyLeaderboardPosition { get; set; }
 
     public int? TotalLeaderboardPosition { get; set; }
+
+    /// <summary>Streaks, achievement count and all-time rank derived from real tracker data.</summary>
+    public PlayerProgressSummaryDto? Progress { get; set; }
 }
 
 public sealed class ProfilePlayerDto

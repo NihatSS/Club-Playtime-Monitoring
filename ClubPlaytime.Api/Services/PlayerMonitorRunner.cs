@@ -53,6 +53,7 @@ public sealed class PlayerMonitorRunner(
             var updateDailyRepo = updateScope.ServiceProvider.GetRequiredService<IDailyPlaytimeRepository>();
             var updateActivityRepo = updateScope.ServiceProvider.GetRequiredService<IActivityRepository>();
             var updateDiscordNotifier = updateScope.ServiceProvider.GetRequiredService<IDiscordNotifier>();
+            var updateProgressService = updateScope.ServiceProvider.GetRequiredService<PlayerProgressService>();
 
             foreach (var player in players)
             {
@@ -64,6 +65,22 @@ public sealed class PlayerMonitorRunner(
                     player.Id,
                     presenceResults.GetValueOrDefault(player.RobloxUserId),
                     cancellationToken);
+
+                // Playtime was recorded for this player this scan — refresh their
+                // streak and achievements from the new real data. Skipped for
+                // players with no new playtime so idle players cost nothing.
+                if (outcome == PlayerCheckOutcome.Playing)
+                {
+                    try
+                    {
+                        await updateProgressService.UpdatePlayerProgressAsync(player.Id, cancellationToken);
+                    }
+                    catch (Exception progressEx)
+                    {
+                        // Progress tracking must never break playtime tracking.
+                        logger.LogWarning(progressEx, "Progress update failed for {Username}", player.Username);
+                    }
+                }
 
                 switch (outcome)
                 {

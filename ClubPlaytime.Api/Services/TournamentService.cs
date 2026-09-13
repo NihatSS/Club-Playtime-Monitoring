@@ -15,7 +15,10 @@ public sealed class TournamentRuleException(string message) : Exception(message)
 /// completion. All writes happen inside transactions so partial brackets or
 /// half-updated matches can never be persisted.
 /// </summary>
-public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
+public sealed class TournamentService(
+    ClubPlaytimeDbContext dbContext,
+    PlayerProgressService progressService,
+    ILogger<TournamentService> logger)
 {
     // ─── Registration ────────────────────────────────────────────
 
@@ -1115,6 +1118,32 @@ public sealed class TournamentService(ClubPlaytimeDbContext dbContext)
         tournament.UpdatedAt = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync();
+
+        // Tournament completion is real data that feeds the achievement system —
+        // re-evaluate achievements for every solo participant (winner gets
+        // Tournament Winner; nothing else changes). Never blocks completion.
+        try
+        {
+            if (!isTeamBracket)
+            {
+                var participantPlayerIds = await dbContext.TournamentParticipants
+                    .Where(p => p.TournamentId == tournament.Id)
+                    .Select(p => p.PlayerId)
+                    .Distinct()
+                    .ToListAsync();
+
+                foreach (var pid in participantPlayerIds)
+                {
+                    await progressService.EvaluateAchievementsAsync(pid);
+                }
+            }
+        }
+        catch (Exception progressEx)
+        {
+            // Progress tracking must never break tournament completion.
+            logger.LogWarning(progressEx, "Achievement evaluation failed after tournament {TournamentId} completed", tournament.Id);
+        }
+
         return tournament;
     }
 

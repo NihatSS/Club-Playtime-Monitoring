@@ -14,6 +14,7 @@ import {
   Megaphone,
   Shield,
   Swords,
+  TrendingUp,
   Trophy,
   User
 } from 'lucide-react';
@@ -654,9 +655,13 @@ export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, c
   const isHome = route === '';
   const isTournaments = route === 'tournaments' || /^tournaments\/\d+$/.test(route);
   const isRewards = route === 'rewards';
+  const isStats = route === 'stats' || /^stats\/\d+$/.test(route);
+  const isAchievements = route === 'achievements' || /^achievements\/\d+$/.test(route);
 
   const moreItems = [
     { label: 'Rewards', icon: Gift, onClick: go('rewards') },
+    { label: 'Statistics', icon: TrendingUp, onClick: go('stats') },
+    { label: 'Achievements', icon: Trophy, onClick: go('achievements') },
     ...(user ? [{ label: 'Profile', icon: User, onClick: go('profile') }] : []),
     ...(isAdmin ? [{ label: 'Admin Panel', icon: Shield, onClick: go('admin-users') }] : []),
     ...(!user ? [{ label: 'Sign In', icon: LogIn, onClick: onSignIn }] : [])
@@ -685,7 +690,7 @@ export default function Header({ user, avatarUrl, isAdmin, onSignIn, onLogout, c
         <nav className="mx-auto hidden items-center gap-1.5 md:flex">
           <NavLink icon={Home} label="Home" active={isHome} onClick={go('')} />
           <NavLink icon={Trophy} label="Tournaments" active={isTournaments} onClick={go('tournaments')} />
-          <NavDropdown icon={LayoutGrid} label="More" items={moreItems} active={isRewards || route === 'profile' || route === 'admin-users'} />
+          <NavDropdown icon={LayoutGrid} label="More" items={moreItems} active={isRewards || isStats || isAchievements || route === 'profile' || route === 'admin-users'} />
         </nav>
 
         {/* Mobile fallback: icon-only nav (full nav hidden below md) */}

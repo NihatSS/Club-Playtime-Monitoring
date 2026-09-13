@@ -10,7 +10,7 @@ namespace ClubPlaytime.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Admin")]
-public sealed class AdminController(ClubPlaytimeDbContext dbContext) : ControllerBase
+public sealed class AdminController(ClubPlaytimeDbContext dbContext, Services.PlayerProgressService progressService) : ControllerBase
 {
     /// <summary>
     /// One-time fix: cap DailyPlaytime to max 24h per day and recalculate TotalPlaySeconds.
@@ -135,6 +135,23 @@ public sealed class AdminController(ClubPlaytimeDbContext dbContext) : Controlle
         }
 
         await dbContext.SaveChangesAsync();
+
+        // Imported historical playtime changes real play-days, so affected
+        // players' streaks and achievements must be re-derived.
+        try
+        {
+            foreach (var robloxId in affectedRobloxIds)
+            {
+                if (playerByRobloxId.TryGetValue(robloxId, out var player))
+                {
+                    await progressService.UpdatePlayerProgressAsync(player.Id);
+                }
+            }
+        }
+        catch
+        {
+            // Progress tracking must never break the import.
+        }
 
         return Ok(new
         {

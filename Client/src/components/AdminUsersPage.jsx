@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle,
+  Flame,
   Gamepad2,
   KeyRound,
   Link2,
@@ -11,6 +12,8 @@ import {
   Search,
   Shield,
   Trash2,
+  TrendingUp,
+  Trophy,
   User as UserIcon
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -18,6 +21,127 @@ import { PasswordChecklist } from './ProfilePage';
 import { passwordIssues } from '../lib/password';
 import { formatDateTime } from '../lib/format';
 import Header from './Header';
+
+/**
+ * Admin visibility for the streaks/achievements/statistics systems: compact
+ * read-only summary of the linked tracker player's progress with links to the
+ * full stats and achievements pages. Shown inside the existing user editor.
+ */
+function PlayerProgressCard({ playerId, playerUsername }) {
+  const [stats, setStats] = useState(null);
+  const [achievements, setAchievements] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError('');
+      try {
+        const [s, a] = await Promise.all([api.playerStats(playerId), api.playerAchievements(playerId)]);
+        if (!cancelled) {
+          setStats(s);
+          setAchievements(a);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [playerId]);
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-neon-cyan/[0.08] bg-ink p-3 text-xs text-mist">
+        Loading player progress...
+      </div>
+    );
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-xs text-red-100">
+        Could not load progress for {playerUsername ?? `player #${playerId}`}: {error || 'not found'}
+      </div>
+    );
+  }
+
+  const unlocked = achievements?.achievements?.filter((a) => a.unlocked) ?? [];
+
+  return (
+    <div className="space-y-3 rounded-lg border border-neon-cyan/[0.12] bg-ink p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+          <TrendingUp className="h-4 w-4 text-neon-cyan" />
+          Tracker progress — {playerUsername ?? stats.username}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { window.location.hash = `stats/${playerId}`; }}
+            className="rounded-md border border-neon-cyan/[0.08] px-2 py-1 text-[10px] font-medium text-zinc-400 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-200"
+          >
+            Full stats
+          </button>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = `achievements/${playerId}`; }}
+            className="rounded-md border border-neon-cyan/[0.08] px-2 py-1 text-[10px] font-medium text-zinc-400 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-200"
+          >
+            All badges
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          { label: 'Current Streak', value: `${stats.currentStreak}d`, icon: Flame, color: 'text-neon-amber' },
+          { label: 'Longest Streak', value: `${stats.longestStreak}d`, icon: Flame, color: 'text-neon-green' },
+          { label: 'Days Played', value: String(stats.daysPlayed), icon: Gamepad2, color: 'text-neon-cyan' },
+          { label: 'Rank', value: stats.totalRank ? `#${stats.totalRank}` : '—', icon: Trophy, color: 'text-neon-purple' }
+        ].map(({ label, value, icon: Icon, color }) => (
+          <div key={label} className="rounded-md bg-panel px-2 py-1.5">
+            <div className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-500">
+              <Icon className="h-2.5 w-2.5" />
+              {label}
+            </div>
+            <div className={`mt-0.5 text-sm font-bold ${color}`}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {achievements && (
+        <div>
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Achievements — {achievements.unlockedCount}/{achievements.totalCount}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {achievements.achievements.map((a) => (
+              <span
+                key={a.key}
+                title={a.unlocked ? `${a.name} — unlocked ${a.unlockedAt ? formatDateTime(a.unlockedAt) : ''}` : `${a.name} — ${a.description}`}
+                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                  a.unlocked
+                    ? 'border-neon-amber/40 bg-neon-amber/10 text-neon-amber'
+                    : 'border-zinc-700 bg-panel text-zinc-500 opacity-60'
+                }`}
+              >
+                <span className={!a.unlocked ? 'grayscale' : ''}>{a.icon}</span>
+                {a.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function RoleBadge({ role }) {
   const isAdmin = role === 'Admin';
@@ -244,6 +368,11 @@ function EditUserForm({ user, onSaved, onDone }) {
           )}
         </div>
       </form>
+
+      {/* Tracker progress (admin visibility for stats/streaks/achievements) */}
+      {user.playerId != null && (
+        <PlayerProgressCard playerId={user.playerId} playerUsername={user.playerUsername} />
+      )}
 
       {/* Password reset */}
       <form onSubmit={handlePasswordChange} className="space-y-2 rounded-lg border border-neon-cyan/[0.08] bg-ink p-3">

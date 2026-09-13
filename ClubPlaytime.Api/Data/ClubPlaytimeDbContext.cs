@@ -31,8 +31,29 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
 
     public DbSet<MonthlyRewardSetting> MonthlyRewardSetting => Set<MonthlyRewardSetting>();
 
+    public DbSet<PlayerStreak> PlayerStreaks => Set<PlayerStreak>();
+
+    public DbSet<PlayerAchievement> PlayerAchievements => Set<PlayerAchievement>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<PlayerStreak>(entity =>
+        {
+            entity.HasKey(s => s.PlayerId);
+        });
+
+        modelBuilder.Entity<PlayerAchievement>(entity =>
+        {
+            entity.Property(a => a.AchievementKey).HasMaxLength(50).IsRequired();
+            entity.Property(a => a.Source).HasMaxLength(20).IsRequired();
+            entity.Property(a => a.Detail).HasMaxLength(300);
+            entity.HasIndex(a => new { a.PlayerId, a.AchievementKey }).IsUnique();
+            entity.HasOne(a => a.Player)
+                .WithMany()
+                .HasForeignKey(a => a.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<Announcement>(entity =>
         {
             entity.Property(a => a.Title).HasMaxLength(120).IsRequired();
@@ -216,7 +237,5 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
             entity.Property(p => p.Description).HasMaxLength(300).IsRequired();
             entity.HasIndex(p => new { p.TournamentId, p.Placement }).IsUnique();
         });
-
-
     }
 }

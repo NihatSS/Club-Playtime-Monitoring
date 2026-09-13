@@ -175,6 +175,12 @@ export const api = {
   weeklyLeaderboard: () => request('/api/dashboard/leaderboard/weekly'),
   player: (id) => request(`/api/players/${id}`),
 
+  // Player statistics, streaks and achievements (public reads)
+  playerStats: (id) => request(`/api/stats/players/${id}`),
+  playerAchievements: (id) => request(`/api/stats/players/${id}/achievements`),
+  myStats: () => request('/api/stats/me'),
+  recomputeProgress: () => request('/api/stats/recompute', { method: 'POST' }),
+
   // Admin-only player management
   addPlayer: (body) => request('/api/players', { method: 'POST', body: JSON.stringify(body) }),
   deletePlayer: (id) => request(`/api/players/${id}`, { method: 'DELETE' }),

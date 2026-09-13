@@ -11,6 +11,7 @@ import {
   Clock,
   Copy,
   ExternalLink,
+  Flame,
   Gamepad2,
   LayoutGrid,
   Play,
@@ -44,6 +45,8 @@ import RequestJoinForm from './components/RequestJoinForm';
 import TournamentsPage from './components/TournamentsPage';
 import TournamentDetailPage from './components/TournamentDetailPage';
 import RewardsPage from './components/RewardsPage';
+import PlayerStatsPage from './components/PlayerStatsPage';
+import AchievementsPage from './components/AchievementsPage';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function statusMeta(status) {
@@ -726,6 +729,47 @@ function DetailPanel({ details, onClose, onDelete, busy, isAdmin, onClubChange }
         </div>
       </div>
 
+      {/* Progress summary: streaks + achievements + rank (real tracker data) */}
+      {details.progress && (
+        <div className="rounded-lg border border-neon-cyan/[0.08] bg-ink p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <Flame className="h-4 w-4 text-neon-amber" />
+              Progress
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { window.location.hash = `stats/${details.id}`; }}
+                className="rounded-md border border-neon-cyan/[0.08] px-2 py-1 text-[10px] font-medium text-zinc-400 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-200"
+              >
+                Stats
+              </button>
+              <button
+                type="button"
+                onClick={() => { window.location.hash = `achievements/${details.id}`; }}
+                className="rounded-md border border-neon-cyan/[0.08] px-2 py-1 text-[10px] font-medium text-zinc-400 transition hover:bg-neon-cyan/[0.06] hover:text-zinc-200"
+              >
+                Badges
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: 'Streak', value: `${details.progress.currentStreak}d`, color: 'text-neon-amber' },
+              { label: 'Best', value: `${details.progress.longestStreak}d`, color: 'text-neon-green' },
+              { label: 'Badges', value: `${details.progress.achievementsUnlocked}/${details.progress.totalAchievements}`, color: 'text-neon-purple' },
+              { label: 'Rank', value: details.progress.totalRank ? `#${details.progress.totalRank}` : '—', color: 'text-neon-cyan' }
+            ].map(({ label, value, color }) => (
+              <div key={label} className="rounded-md bg-panel px-2 py-1.5 text-center">
+                <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">{label}</div>
+                <div className={`text-sm font-bold ${color}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Statistics */}
       <div className="rounded-lg border border-neon-cyan/[0.08] bg-ink p-4">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-100">
@@ -1128,6 +1172,36 @@ export default function App() {
   if (route === 'rewards') {
     return (
       <RewardsPage
+        user={user}
+        avatarUrl={headerAvatarUrl}
+        isAdmin={isAdmin}
+        onLogout={handleLogout}
+        onSignIn={() => setShowAuth(true)}
+      />
+    );
+  }
+
+  // Player statistics page: #/stats and #/stats/{playerId}
+  const statsIdMatch = route.match(/^stats\/(\d+)$/);
+  if (route === 'stats' || statsIdMatch) {
+    return (
+      <PlayerStatsPage
+        playerId={statsIdMatch ? Number(statsIdMatch[1]) : null}
+        user={user}
+        avatarUrl={headerAvatarUrl}
+        isAdmin={isAdmin}
+        onLogout={handleLogout}
+        onSignIn={() => setShowAuth(true)}
+      />
+    );
+  }
+
+  // Achievements page: #/achievements and #/achievements/{playerId}
+  const achievementsIdMatch = route.match(/^achievements\/(\d+)$/);
+  if (route === 'achievements' || achievementsIdMatch) {
+    return (
+      <AchievementsPage
+        playerId={achievementsIdMatch ? Number(achievementsIdMatch[1]) : null}
         user={user}
         avatarUrl={headerAvatarUrl}
         isAdmin={isAdmin}

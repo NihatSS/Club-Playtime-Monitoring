@@ -12,7 +12,8 @@ namespace ClubPlaytime.Api.Controllers;
 [Authorize]
 public sealed class ProfileController(
     ClubPlaytimeDbContext dbContext,
-    IPlayerStatsService playerStatsService) : ControllerBase
+    IPlayerStatsService playerStatsService,
+    Services.PlayerProgressService progressService) : ControllerBase
 {
     /// <summary>
     /// Everything the profile page needs in one call: account info, linked
@@ -64,6 +65,17 @@ public sealed class ProfileController(
 
                 (response.WeeklyLeaderboardPosition, response.TotalLeaderboardPosition) =
                     await ComputeLeaderboardPositionsAsync(user.PlayerId.Value, cancellationToken);
+
+                // Streaks, achievements count and all-time rank for the profile
+                // summary. Additive: never breaks the profile if it fails.
+                try
+                {
+                    response.Progress = await progressService.GetSummaryAsync(user.PlayerId.Value, cancellationToken);
+                }
+                catch
+                {
+                    // Progress summary is optional.
+                }
             }
         }
 
