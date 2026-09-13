@@ -101,8 +101,8 @@ function ChartCard({ title, icon: Icon, accent, data, type = 'area', height = 16
   );
 }
 
-export default function PlayerStatsPage({ user, avatarUrl, isAdmin, onLogout, onSignIn }) {
-  const [playerId, setPlayerId] = useState(null);
+export default function PlayerStatsPage({ playerId: playerIdProp, user, avatarUrl, isAdmin, onLogout, onSignIn }) {
+  const [playerId, setPlayerId] = useState(playerIdProp ?? null);
   const [playerQuery, setPlayerQuery] = useState('');
   const [playerOptions, setPlayerOptions] = useState([]);
   const [stats, setStats] = useState(null);
@@ -110,17 +110,31 @@ export default function PlayerStatsPage({ user, avatarUrl, isAdmin, onLogout, on
   const [error, setError] = useState('');
   const [showSearch, setShowSearch] = useState(false);
 
-  // Resolve which player to show: the signed-in user's linked player, or any
-  // player chosen through the selector (all visitors can view stats — tracker
-  // data is public on the dashboard already).
+  // Resolve which player to show. A route param (#/stats/{id}) always wins —
+  // that's how the player detail panel deep-links here. Without one, show the
+  // signed-in user's linked player, else the first tracker player.
   useEffect(() => {
     let cancelled = false;
+    async function loadPlayerOptions() {
+      try {
+        const dashboard = await api.dashboard();
+        if (!cancelled) setPlayerOptions(dashboard);
+      } catch {
+        // Options only power the "view another player" search; ignore errors.
+      }
+    }
     async function resolveDefault() {
+      if (playerIdProp) {
+        setPlayerId(playerIdProp);
+        await loadPlayerOptions();
+        return;
+      }
       if (user) {
         try {
           const profile = await api.myProfile();
           if (!cancelled && profile?.player?.id) {
             setPlayerId(profile.player.id);
+            await loadPlayerOptions();
             return;
           }
         } catch {
@@ -143,11 +157,12 @@ export default function PlayerStatsPage({ user, avatarUrl, isAdmin, onLogout, on
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [playerIdProp, user]);
 
   const loadStats = useCallback(async (id) => {
     if (!id) return;
     setLoading(true);
+    setStats(null); // avoid flashing the previous player's numbers
     try {
       const data = await api.playerStats(id);
       setStats(data);
@@ -213,7 +228,7 @@ export default function PlayerStatsPage({ user, avatarUrl, isAdmin, onLogout, on
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => { setPlayerId(p.id); setPlayerQuery(''); }}
+                    onClick={() => { setPlayerId(p.id); setPlayerQuery(''); window.location.hash = `stats/${p.id}`; }}
                     className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-neon-cyan/[0.05]"
                   >
                     {p.avatarUrl ? (

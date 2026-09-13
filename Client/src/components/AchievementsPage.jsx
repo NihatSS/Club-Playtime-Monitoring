@@ -85,13 +85,23 @@ export default function AchievementsPage({ playerId: playerIdProp, user, avatarU
   const [filter, setFilter] = useState('all'); // all | unlocked | locked
   const [showSearch, setShowSearch] = useState(false);
 
-  // Resolve the player to show: explicit route param, else the signed-in
-  // user's linked player, else the first tracker player.
+  // Resolve the player to show: explicit route param (#/achievements/{id})
+  // always wins — that's how the player detail panel deep-links here. Else the
+  // signed-in user's linked player, else the first tracker player.
   useEffect(() => {
     let cancelled = false;
+    async function loadPlayerOptions() {
+      try {
+        const dashboard = await api.dashboard();
+        if (!cancelled) setPlayerOptions(dashboard);
+      } catch {
+        // Options only power the "view another player" search; ignore errors.
+      }
+    }
     async function resolveDefault() {
       if (playerIdProp) {
         setPlayerId(playerIdProp);
+        await loadPlayerOptions();
         return;
       }
       if (user) {
@@ -99,6 +109,7 @@ export default function AchievementsPage({ playerId: playerIdProp, user, avatarU
           const profile = await api.myProfile();
           if (!cancelled && profile?.player?.id) {
             setPlayerId(profile.player.id);
+            await loadPlayerOptions();
             return;
           }
         } catch {
@@ -126,6 +137,7 @@ export default function AchievementsPage({ playerId: playerIdProp, user, avatarU
   const loadAchievements = useCallback(async (id) => {
     if (!id) return;
     setLoading(true);
+    setAchievements(null); // avoid flashing the previous player's badges
     try {
       const data = await api.playerAchievements(id);
       setAchievements(data);
@@ -195,7 +207,7 @@ export default function AchievementsPage({ playerId: playerIdProp, user, avatarU
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => { setPlayerId(p.id); setPlayerQuery(''); }}
+                    onClick={() => { setPlayerId(p.id); setPlayerQuery(''); window.location.hash = `achievements/${p.id}`; }}
                     className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-neon-cyan/[0.05]"
                   >
                     {p.avatarUrl ? (
