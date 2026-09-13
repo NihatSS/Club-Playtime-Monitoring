@@ -354,9 +354,15 @@ public sealed class PlayerProgressService(
                         : def.Key == AchievementCatalog.Top3PlayerKey && rankThreshold > 0
                             ? FirstDayReaching(rankThreshold)
                             : null;
+                // Play-days are UTC calendar days (same basis the tracker records
+                // playtime on), so midnight of the crossing day is a UTC instant.
+                // Npgsql rejects DateTime.Kind=Unspecified for timestamptz columns,
+                // which made every stats/achievements read 500 on PostgreSQL.
                 var crossedAt = def.Key == AchievementCatalog.TournamentWinnerKey
                     ? tournamentWins[0].CompletedAt
-                    : historicalDay is null ? null : historicalDay.Value.ToDateTime(TimeOnly.MinValue);
+                    : historicalDay is null
+                        ? null
+                        : DateTime.SpecifyKind(historicalDay.Value.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
 
                 dbContext.PlayerAchievements.Add(new PlayerAchievement
                 {
