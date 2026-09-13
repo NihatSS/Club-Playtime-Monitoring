@@ -1,3 +1,4 @@
+﻿using System.Diagnostics;
 using ClubPlaytime.Api.DTOs;
 using ClubPlaytime.Api.Models;
 using ClubPlaytime.Api.Options;
@@ -11,6 +12,7 @@ public sealed class PlayerStatsService(
     IDailyPlaytimeRepository dailyPlaytimeRepository,
     IActivityRepository activityRepository,
     IRobloxAvatarClient avatarClient,
+    IRobloxGameInfoClient gameInfoClient,
     IOptionsMonitor<MonitoringOptions> options,
     PlayerProgressService progressService) : IPlayerStatsService
 {
@@ -40,6 +42,21 @@ public sealed class PlayerStatsService(
         // only merges this response (chart + monthly stats) when it arrives.
         var dailyRows = await dailyPlaytimeRepository.GetRangeAsync(player.Id, last30From, today, cancellationToken);
         var recentActivity = await activityRepository.GetRecentForPlayerAsync(player.Id, 20, cancellationToken);
+
+        // Recent Activity as game sessions: pair Started/Stopped events into
+        // sessions (target-game events are reliably paired by the monitor; other
+        // games get a synthetic end at the next check) and attach the real game
+        // name and icon. Additive: a failure in game-info lookup must never break
+        // the details response.
+        List<GameSessionDto>? gameSessions = null;
+        try
+        {
+            gameSessions = await BuildGameSessionsAsync(recentActivity, cancellationToken);
+        }
+        catch (Exception gameInfoEx)
+        {
+            // Ignored: RecentActivity below still renders the plain event feed.
+        }
         var dailyByDate = dailyRows.ToDictionary(row => row.Date, row => row.PlaySeconds);
         var last30Days = Enumerable.Range(0, 30)
             .Select(offset =>
@@ -85,7 +102,8 @@ public sealed class PlayerStatsService(
             recentActivity.Select(ToActivityDto).ToList())
         {
             Progress = progress,
-            LastSeenOnSite = player.LastSeenOnSite
+            LastSeenOnSite = player.LastSeenOnSite,
+            GameSessions = gameSessions
         };
     }
 
@@ -405,6 +423,178 @@ public sealed class PlayerStatsService(
             activityEvent.Message,
             activityEvent.DeltaSeconds,
             activityEvent.OccurredAt);
+    }
+
+    /// <summary>
+    /// Pairs Started/Stopped activity events into per-game sessions and resolves
+    /// each game's icon. A player can only be in one game at a time, so every
+    /// Stopped pairs with the nearest preceding Started. Game name comes from the
+    /// event's GameName column (new rows) or is parsed from the legacy message
+    /// text; the icon comes from the real Roblox thumbnails API via the place ID.
+    /// </summary>
+    private async Task<List<GameSessionDto>> BuildGameSessionsAsync(
+        List<PlayerActivityEvent> events,
+        CancellationToken cancellationToken)
+    {
+        if (events.Count == 0)
+        {
+            return new List<GameSessionDto>();
+        }
+
+        var targetGame = options.CurrentValue.TargetGameName;
+        var sessions = new List<GameSessionDto>();
+        GameSessionDto? pending = null;
+
+        foreach (var ev in events.OrderBy(e => e.OccurredAt))
+        {
+            var isStarted = string.Equals(ev.EventType, "Started", StringComparison.OrdinalIgnoreCase);
+            var isStopped = string.Equals(ev.EventType, "Stopped", StringComparison.OrdinalIgnoreCase);
+            if (!isStarted && !isStopped)
+            {
+                continue; // manual adjustments etc. are not game sessions
+            }
+
+            var gameName = ResolveGameName(ev, targetGame);
+            if (isStarted)
+            {
+                if (pending is not null)
+                {
+                    // A previous Started never got its Stopped within this feed.
+                    sessions.Add(pending);
+                }
+                pending = new GameSessionDto
+                {
+                    GameName = gameName,
+                    PlaceId = ev.PlaceId,
+                    StartedAt = ev.OccurredAt,
+                    EndedAt = null
+                };
+            }
+            else if (pending is not null)
+            {
+                pending.EndedAt = ev.OccurredAt;
+                pending.PlaceId ??= ev.PlaceId;
+                sessions.Add(pending);
+                pending = null;
+            }
+            else
+            {
+                // Stopped without its Started (feed cut-off or legacy data).
+                sessions.Add(new GameSessionDto
+                {
+                    GameName = gameName,
+                    PlaceId = ev.PlaceId,
+                    StartedAt = null,
+                    EndedAt = ev.OccurredAt
+                });
+            }
+        }
+
+        if (pending is not null)
+        {
+            sessions.Add(pending); // still in game (its Stopped is beyond the feed)
+        }
+
+        // Resolve real game metadata for the distinct recorded places.
+        var infoByPlace = new Dictionary<long, RobloxGameInfo>();
+        foreach (var placeId in sessions
+            .Where(s => s.PlaceId is not null)
+            .Select(s => s.PlaceId!.Value)
+            .Distinct())
+        {
+            var info = await gameInfoClient.GetByPlaceIdAsync(placeId, cancellationToken);
+            if (info is not null)
+            {
+                infoByPlace[placeId] = info;
+            }
+        }
+
+        foreach (var session in sessions)
+        {
+            if (session.PlaceId is not null && infoByPlace.TryGetValue(session.PlaceId.Value, out var info))
+            {
+                session.GameIconUrl = info.IconUrl;
+                if (!string.Equals(session.GameName, info.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    session.GameName = info.Name; // canonical game name from Roblox
+                }
+            }
+            else
+            {
+                // Legacy rows have no place ID - still attach an icon when the
+                // parsed name matches a game resolved elsewhere in this feed
+                // (compared with update-prefixes like "[UPD..]" stripped).
+                var byName = infoByPlace.Values
+                    .FirstOrDefault(i => string.Equals(NormalizeGameName(i.Name), NormalizeGameName(session.GameName), StringComparison.OrdinalIgnoreCase));
+                if (byName is not null)
+                {
+                    session.GameIconUrl = byName.IconUrl;
+                }
+            }
+
+            // Display name without update-prefix decorations ("[UPD x] Game" -> "Game").
+            session.GameName = NormalizeGameName(session.GameName);
+        }
+
+        return sessions
+            .OrderByDescending(s => s.EndedAt ?? s.StartedAt ?? DateTime.MinValue)
+            .Take(10)
+            .ToList();
+    }
+
+    private static string ResolveGameName(PlayerActivityEvent ev, string targetGame)
+    {
+        if (!string.IsNullOrWhiteSpace(ev.GameName))
+        {
+            return ev.GameName;
+        }
+
+        // Legacy rows have no GameName: parse "Started playing X." / "Left X.";
+        // adjustments and other event types fall back to the target game.
+        var message = ev.Message ?? string.Empty;
+        if (message.StartsWith("Started playing ", StringComparison.Ordinal))
+        {
+            var name = message["Started playing ".Length..].TrimEnd('.');
+            if (name.Length > 0)
+            {
+                return name;
+            }
+        }
+        if (message.StartsWith("Left ", StringComparison.Ordinal))
+        {
+            var name = message["Left ".Length..].TrimEnd('.');
+            if (name.Length > 0)
+            {
+                return name;
+            }
+        }
+        return targetGame;
+    }
+
+    /// <summary>
+    /// Strips Roblox live-update decorations from displayed game names, e.g.
+    /// "[UPD x] Racket Rivals " becomes "Racket Rivals" and an emoji-prefixed
+    /// Blox Fruits name loses its bracketed emoji tag.
+    /// </summary>
+    public static string NormalizeGameName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "Unknown game";
+        }
+
+        var trimmed = name.Trim();
+        while (trimmed.StartsWith('['))
+        {
+            var close = trimmed.IndexOf(']');
+            if (close < 0)
+            {
+                break;
+            }
+            trimmed = trimmed[(close + 1)..].TrimStart();
+        }
+
+        return trimmed.Length > 0 ? trimmed : name.Trim();
     }
 
     private string GetStatus(Player player)

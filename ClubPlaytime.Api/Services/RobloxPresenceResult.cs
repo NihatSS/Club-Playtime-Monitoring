@@ -6,10 +6,11 @@ public sealed record RobloxPresenceResult(
     bool IsOnline,
     bool IsPlayingTargetGame,
     string? CurrentGame,
+    long? PlaceId,
     string? ErrorMessage)
 {
     public static RobloxPresenceResult Failed(string message)
     {
-        return new RobloxPresenceResult(false, false, false, false, null, message);
+        return new RobloxPresenceResult(false, false, false, false, null, null, message);
     }
 }

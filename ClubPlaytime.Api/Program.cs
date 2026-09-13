@@ -163,6 +163,8 @@ builder.Services.AddHttpClient<IRobloxProfileClient, RobloxProfileClient>(client
 });
 builder.Services.AddHttpClient<IRobloxAvatarClient, RobloxAvatarClient>();
 builder.Services.AddHttpClient<IDiscordNotifier, DiscordNotifier>();
+builder.Services.AddHttpClient("RobloxGameInfo");
+builder.Services.AddSingleton<IRobloxGameInfoClient, RobloxGameInfoClient>();
 builder.Services.AddSingleton<IPlayerMonitorRunner, PlayerMonitorRunner>();
 builder.Services.AddHostedService<PlayerMonitoringHostedService>();
 
@@ -528,8 +530,11 @@ static void ApplyPostgresProfilePresenceSchema(ClubPlaytimeDbContext dbContext)
 {
     dbContext.Database.ExecuteSqlRaw("""
         ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "BannerUrl" character varying(700) NULL;
+        ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "BannerImage" bytea NULL;
         ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "LastSeenOnSite" timestamp with time zone NULL;
         ALTER TABLE "Players" ADD COLUMN IF NOT EXISTS "LastSeenOnSite" timestamp with time zone NULL;
+        ALTER TABLE "PlayerActivityEvents" ADD COLUMN IF NOT EXISTS "GameName" character varying(150) NULL;
+        ALTER TABLE "PlayerActivityEvents" ADD COLUMN IF NOT EXISTS "PlaceId" bigint NULL;
         """);
 }
 

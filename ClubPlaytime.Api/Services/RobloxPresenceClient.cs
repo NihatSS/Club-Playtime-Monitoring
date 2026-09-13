@@ -103,7 +103,7 @@ public sealed class RobloxPresenceClient(
                         !string.IsNullOrWhiteSpace(currentGame) &&
                         currentGame.Contains(targetGame, StringComparison.OrdinalIgnoreCase);
 
-                    return new RobloxPresenceResult(true, true, isOnline, isPlayingTargetGame, currentGame, null);
+                    return new RobloxPresenceResult(true, true, isOnline, isPlayingTargetGame, currentGame, entry.PlaceId, null);
                 });
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

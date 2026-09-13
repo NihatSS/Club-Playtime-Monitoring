@@ -55,6 +55,10 @@ public sealed class PlayerMonitorRunner(
             var updateDiscordNotifier = updateScope.ServiceProvider.GetRequiredService<IDiscordNotifier>();
             var updateProgressService = updateScope.ServiceProvider.GetRequiredService<PlayerProgressService>();
 
+            // Non-target-game Started/Stopped events deferred to the end of the scan
+            // so the bulk SaveChangesAsync happens once, after the per-player loop.
+            var otherGameEvents = new List<PlayerActivityEvent>();
+
             foreach (var player in players)
             {
                 var outcome = await ApplyPresenceResultAsync(
@@ -64,6 +68,7 @@ public sealed class PlayerMonitorRunner(
                     updateDiscordNotifier,
                     player.Id,
                     presenceResults.GetValueOrDefault(player.RobloxUserId),
+                    otherGameEvents,
                     cancellationToken);
 
                 // Playtime was recorded for this player this scan — refresh their
@@ -99,6 +104,16 @@ public sealed class PlayerMonitorRunner(
                 }
             }
 
+            // Bulk-insert deferred non-target-game events (added by ApplyPresenceResultAsync).
+            foreach (var otherGameEvent in otherGameEvents)
+            {
+                await updateActivityRepo.AddAsync(otherGameEvent, cancellationToken);
+            }
+            if (otherGameEvents.Count > 0)
+            {
+                await updatePlayerRepo.SaveChangesAsync(cancellationToken);
+            }
+
             logger.LogInformation("Completed. {Playing} playing, {Online} online, {Offline} offline, {Errors} errors.",
                 playingCount, onlineCount, offlineCount, errorCount);
             return new MonitorRunResult(players.Count, playingCount, offlineCount, errorCount, false);
@@ -116,6 +131,7 @@ public sealed class PlayerMonitorRunner(
         IDiscordNotifier discordNotifier,
         int playerId,
         RobloxPresenceResult? presence,
+        List<PlayerActivityEvent> otherGameEvents,
         CancellationToken cancellationToken)
     {
         var player = await playerRepository.GetByIdAsync(playerId, cancellationToken: cancellationToken);
@@ -161,6 +177,8 @@ public sealed class PlayerMonitorRunner(
                     PlayerId = player.Id,
                     EventType = "Started",
                     Message = $"Started playing {presence.CurrentGame ?? targetGame}.",
+                    GameName = presence.CurrentGame ?? targetGame,
+                    PlaceId = presence.PlaceId,
                     OccurredAt = now
                 }, cancellationToken);
 
@@ -188,13 +206,18 @@ public sealed class PlayerMonitorRunner(
         player.LastSeenPlaying = null;
         player.UpdatedAt = now;
 
+        var leftGameName = presence.CurrentGame ?? targetGame;
+
         if (wasPlaying)
         {
             await activityRepository.AddAsync(new PlayerActivityEvent
             {
                 PlayerId = player.Id,
                 EventType = "Stopped",
-                Message = $"Left {targetGame}.",
+                Message = $"Left {leftGameName}.",
+                // GameName mirrors what the matching Started event recorded so the
+                // website can pair them into one session (same game name).
+                GameName = leftGameName,
                 OccurredAt = now
             }, cancellationToken);
 
@@ -203,7 +226,38 @@ public sealed class PlayerMonitorRunner(
         }
         else if (presence.IsOnline)
         {
-            logger.LogInformation("{Username} -> Online ({GameName})", player.Username, presence.CurrentGame);
+            // Playing (or just online in) a NON-target game: the tracker counts no
+            // playtime for these, but the website's Recent Activity still shows the
+            // session — so record Started/Stopped events with the real game name.
+            var gameName = presence.CurrentGame;
+            if (string.IsNullOrWhiteSpace(gameName))
+            {
+                gameName = "a Roblox game";
+            }
+
+            await activityRepository.AddAsync(new PlayerActivityEvent
+            {
+                PlayerId = player.Id,
+                EventType = "Started",
+                Message = $"Started playing {gameName}.",
+                GameName = gameName,
+                PlaceId = presence.PlaceId,
+                OccurredAt = now
+            }, cancellationToken);
+
+            otherGameEvents.Add(new PlayerActivityEvent
+            {
+                PlayerId = player.Id,
+                EventType = "Stopped",
+                Message = $"Left {gameName}.",
+                GameName = gameName,
+                PlaceId = presence.PlaceId,
+                // A single presence sample only proves "was in that game at this
+                // instant"; the next successful check is the earliest believable end.
+                OccurredAt = now.AddSeconds(Math.Max(30, options.CurrentValue.CheckIntervalSeconds))
+            });
+
+            logger.LogInformation("{Username} -> Online ({GameName})", player.Username, gameName);
         }
         else
         {

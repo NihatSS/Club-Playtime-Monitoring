@@ -20,8 +20,11 @@ public sealed class MyProfileResponse
     /// <summary>Self-reported Roblox user ID shown until a tracker player is linked.</summary>
     public long? RobloxUserId { get; set; }
 
-    /// <summary>Custom banner image shown behind the profile hero (null = default gradient).</summary>
+    /// <summary>Custom banner image URL for the profile hero (null when an uploaded image is used or the default gradient shows).</summary>
     public string? BannerUrl { get; set; }
+
+    /// <summary>Cache-buster for the uploaded banner image (null = no uploaded image). Image lives at /api/profile/banner-image/{userId}.</summary>
+    public string? BannerImageVersion { get; set; }
 
     public ProfilePlayerDto? Player { get; set; }
 

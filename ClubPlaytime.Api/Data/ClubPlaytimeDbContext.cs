@@ -97,6 +97,7 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
         {
             entity.Property(activity => activity.EventType).HasMaxLength(40).IsRequired();
             entity.Property(activity => activity.Message).HasMaxLength(500).IsRequired();
+            entity.Property(activity => activity.GameName).HasMaxLength(150);
             entity.HasIndex(activity => new { activity.PlayerId, activity.OccurredAt });
             entity.HasOne(activity => activity.Player)
                 .WithMany(player => player.ActivityEvents)

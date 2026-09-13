@@ -33,8 +33,11 @@ public sealed class User
     /// <summary>Roblox user ID the user reports on their profile before tracker linking.</summary>
     public long? RobloxUserId { get; set; }
 
-    /// <summary>Optional custom banner image the user set for their profile hero.</summary>
+    /// <summary>Optional custom banner image URL for the profile hero (legacy URL option).</summary>
     public string? BannerUrl { get; set; }
+
+    /// <summary>Custom banner image uploaded from the user's PC (served via /api/profile/banner-image/{userId}).</summary>
+    public byte[]? BannerImage { get; set; }
 
     /// <summary>Last time this account's session was seen on the website (UTC). Drives the presence dot.</summary>
     public DateTime? LastSeenOnSite { get; set; }

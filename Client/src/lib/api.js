@@ -54,7 +54,9 @@ export function setOnAuthExpired(callback) {
 async function request(path, options = {}) {
   const token = getToken();
   const headers = {
-    'Content-Type': 'application/json',
+    // FormData bodies must set their own multipart Content-Type boundary,
+    // so the JSON default is skipped for them.
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...options.headers
   };
 
@@ -137,12 +139,23 @@ export const api = {
       body: JSON.stringify(body)
     }),
 
-  // Set (or clear with '') the custom banner image on the caller's profile hero
+  // Set (or clear with '') the custom banner image URL on the caller's profile hero
   updateBanner: (bannerUrl) =>
     request('/api/profile/banner', {
       method: 'POST',
       body: JSON.stringify({ bannerUrl })
     }),
+
+  // Upload a banner image file from the user's PC (multipart "file" field).
+  uploadBanner: (file) => {
+    const body = new FormData();
+    body.append('file', file);
+    return request('/api/profile/banner/upload', {
+      method: 'POST',
+      headers: {}, // let the browser set the multipart Content-Type
+      body
+    });
+  },
 
   // Admin: user management (Phase 8)
   getUsers: () => request('/api/admin/users'),

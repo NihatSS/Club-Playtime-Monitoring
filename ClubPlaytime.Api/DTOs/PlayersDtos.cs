@@ -200,6 +200,9 @@ public sealed class PlayerDetailsDto
 
     public IReadOnlyList<ActivityEventDto> RecentActivity { get; set; } = Array.Empty<ActivityEventDto>();
 
+    /// <summary>Recent play sessions grouped per game (Started/Stopped paired). Null for very old cached clients.</summary>
+    public IReadOnlyList<GameSessionDto>? GameSessions { get; set; }
+
     /// <summary>Streaks, achievements count and rank derived from real tracker data. Null for very old cached clients.</summary>
     public PlayerProgressSummaryDto? Progress { get; set; }
 
@@ -228,6 +231,25 @@ public sealed class PlayerDetailsDto
         Last30Days = last30Days;
         RecentActivity = recentActivity;
     }
+}
+
+/// <summary>One recent game session shown in the profile's Recent Activity feed.</summary>
+public sealed class GameSessionDto
+{
+    /// <summary>Game name from real tracker events (or parsed from legacy event messages).</summary>
+    public string GameName { get; set; } = string.Empty;
+
+    /// <summary>Roblox game icon resolved from the recorded place ID (null when not resolvable).</summary>
+    public string? GameIconUrl { get; set; }
+
+    /// <summary>Roblox place ID the session was recorded in, when known.</summary>
+    public long? PlaceId { get; set; }
+
+    /// <summary>When the session started (null when the Started event is beyond the feed cut-off).</summary>
+    public DateTime? StartedAt { get; set; }
+
+    /// <summary>When the session ended (null = still in game, or Stopped is beyond the feed cut-off).</summary>
+    public DateTime? EndedAt { get; set; }
 }
 
 public sealed class LinkDiscordRequest

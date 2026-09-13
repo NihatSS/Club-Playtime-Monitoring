@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
@@ -18,15 +18,18 @@ import {
   Link2,
   Medal,
   Pencil,
+  Play,
   RotateCcw,
   Save,
   ShieldCheck,
+  Square,
   Star,
   Target,
   Trash2,
   TrendingUp,
   Trophy,
   Unlink,
+  Upload,
   User
 } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
@@ -211,6 +214,9 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   const [bannerEditing, setBannerEditing] = useState(false);
   const [bannerInput, setBannerInput] = useState('');
   const [bannerBusy, setBannerBusy] = useState(false);
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [bannerFileVersion, setBannerFileVersion] = useState(null);
+  const bannerFileRef = useRef(null);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -218,6 +224,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     try {
       const data = await api.myProfile();
       setProfile(data);
+      setBannerFileVersion(data.bannerImageVersion ?? null);
       setDiscordInput(data.discordUserId ?? '');
       setDiscordEditing(false);
       if (data.player?.id) {
@@ -320,6 +327,100 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     }
   }
 
+  // Resize an image file to at most 1600x400 (banner shape) and re-encode as
+  // JPEG so uploads from the user's PC stay small (<2 MB server limit).
+  function resizeImageFile(file, maxWidth = 1600, maxHeight = 400) {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        try {
+          // Compute the biggest centered cover-crop that fits the limits.
+          const scale = Math.min(maxWidth / img.width, maxHeight / img.height);
+          const cropW = Math.min(img.width, Math.max(1, Math.round(maxWidth / Math.max(1, scale))));
+          const cropH = Math.min(img.height, Math.max(1, Math.round(maxHeight / Math.max(1, scale))));
+          const srcX = Math.floor((img.width - cropW) / 2);
+          const srcY = Math.floor((img.height - cropH) / 2);
+
+          // Render at native resolution first, then step down for quality.
+          let canvas = document.createElement('canvas');
+          let ctx = canvas.getContext('2d');
+          canvas.width = cropW;
+          canvas.height = cropH;
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, srcX, srcY, cropW, cropH, 0, 0, cropW, cropH);
+
+          let quality = 0.85;
+          const stepDown = () => {
+            let dataUrl;
+            try {
+              dataUrl = canvas.toDataURL('image/jpeg', quality);
+            } catch (err) {
+              reject(err);
+              return;
+            }
+            const approxBytes = Math.floor((dataUrl.length - 'data:image/jpeg;base64,'.length) * 0.75);
+            if (approxBytes > 1_500_000 && quality > 0.4) {
+              quality -= 0.15;
+              stepDown();
+              return;
+            }
+            if (approxBytes > 1_500_000) {
+              // Still too big: halve the pixel dimensions and retry once.
+              const half = document.createElement('canvas');
+              half.width = Math.max(1, Math.floor(canvas.width / 2));
+              half.height = Math.max(1, Math.floor(canvas.height / 2));
+              half.getContext('2d').drawImage(canvas, 0, 0, half.width, half.height);
+              canvas = half;
+              quality = 0.8;
+              stepDown();
+              return;
+            }
+            resolve(dataUrl);
+          };
+          stepDown();
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Could not read that image. Try a different file.'));
+      };
+      img.src = objectUrl;
+    });
+  }
+
+  async function handleBannerFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('That file is not an image.');
+      return;
+    }
+
+    setError('');
+    setNotice('');
+    setBannerUploading(true);
+    try {
+      const dataUrl = await resizeImageFile(file);
+      const blob = await (await fetch(dataUrl)).blob();
+      const result = await api.uploadBanner(new File([blob], 'banner.jpg', { type: 'image/jpeg' }));
+      setNotice(result.message ?? 'Banner image uploaded.');
+      setBannerEditing(false);
+      setBannerFileVersion(result.bannerImageVersion ?? String(Date.now()));
+      await loadProfile();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBannerUploading(false);
+    }
+  }
+
   async function handlePasswordChange(event) {
     event.preventDefault();
     setError('');
@@ -345,6 +446,14 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
       setPwBusy(false);
     }
   }
+
+  // Per-game Recent Activity feed: sessions computed by the API from real
+  // Started/Stopped events (all games, not only the tracked one), newest first.
+  const gameSessions = useMemo(() => {
+    const sessions = details?.gameSessions;
+    if (Array.isArray(sessions) && sessions.length > 0) return sessions;
+    return [];
+  }, [details]);
 
   // Last-7-days playtime distribution from the real DailyPlaytime history —
   // drives the donut in the Player Stats card.
@@ -392,6 +501,10 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   const displayAvatar = player?.avatarUrl ?? avatarUrl;
   const displayRobloxId = player?.robloxUserId ?? profile.robloxUserId;
   const weekDonutTotal = weekDonut.reduce((s, d) => s + d.value, 0);
+  const bannerImageUrl = profile.bannerImageVersion
+    ? `/api/profile/banner-image/${profile.id}?v=${profile.bannerImageVersion}`
+    : null;
+  const heroImage = bannerImageUrl ?? profile.bannerUrl;
 
   return (
     <div className="min-h-screen bg-[#050510] text-zinc-50">
@@ -433,12 +546,12 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
           <div className="space-y-5">
             {/* ─── HERO BANNER ─── */}
             <div className="relative overflow-hidden rounded-xl border border-line shadow-glow">
-              {/* Custom banner image (if set), otherwise the default gradient */}
-              {profile.bannerUrl ? (
+              {/* Custom banner image (uploaded file or URL, if set), otherwise the default gradient */}
+              {heroImage ? (
                 <>
                   <div className="absolute inset-0 bg-gradient-to-br from-[#221a4d] via-[#1b1440] to-[#0a0a1a]" />
                   <img
-                    src={profile.bannerUrl}
+                    src={heroImage}
                     alt=""
                     className="absolute inset-0 h-full w-full object-cover"
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -456,13 +569,30 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
               {bannerEditing ? (
                 <div className="absolute right-3 top-3 z-10 w-72 rounded-lg border border-neon-cyan/20 bg-[#0d0d1a]/95 p-3 shadow-2xl backdrop-blur">
                   <div className="text-xs font-semibold text-zinc-200">Banner image</div>
+                  {/* Pick an image from this device */}
+                  <input
+                    ref={bannerFileRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/gif,image/webp"
+                    className="hidden"
+                    onChange={handleBannerFile}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => bannerFileRef.current?.click()}
+                    disabled={bannerUploading || bannerBusy}
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-neon-cyan/40 bg-neon-cyan/10 px-2.5 py-2 text-xs font-semibold text-neon-cyan transition hover:bg-neon-cyan/20 disabled:opacity-50"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {bannerUploading ? 'Uploading…' : 'Upload from your PC'}
+                  </button>
+                  <div className="mt-2 text-[10px] text-zinc-500">or paste an image URL</div>
                   <input
                     type="url"
                     value={bannerInput}
                     onChange={(e) => setBannerInput(e.target.value)}
                     placeholder="https://example.com/banner.jpg"
-                    className="mt-2 w-full rounded-md border border-line bg-ink px-2.5 py-1.5 text-xs text-zinc-50 placeholder:text-zinc-500 focus:border-neon-cyan/50 focus:outline-none"
-                    autoFocus
+                    className="mt-1 w-full rounded-md border border-line bg-ink px-2.5 py-1.5 text-xs text-zinc-50 placeholder:text-zinc-500 focus:border-neon-cyan/50 focus:outline-none"
                   />
                   <div className="mt-2 flex items-center gap-1.5">
                     <button
@@ -472,7 +602,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                       className="inline-flex items-center gap-1 rounded-md bg-neon-cyan px-2.5 py-1 text-[11px] font-bold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-50"
                     >
                       <Save className="h-3 w-3" />
-                      {bannerBusy ? 'Saving…' : 'Save'}
+                      {bannerBusy ? 'Saving…' : 'Save URL'}
                     </button>
                     {profile.bannerUrl && (
                       <button
@@ -753,41 +883,69 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
             {/* ─── RECENT ACTIVITY ─── */}
             {player && (
               <Card icon={Gamepad2} title="Recent Activity" accent="text-neon-cyan">
-                {details?.recentActivity?.length > 0 ? (
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {details.recentActivity.slice(0, 4).map((event) => {
-                      const isStart = event.eventType === 'Started';
-                      const isStop = event.eventType === 'Stopped';
-                      const isAdjust = event.eventType === 'Adjusted';
+                {gameSessions.length > 0 ? (
+                  <div className="space-y-2">
+                    {gameSessions.slice(0, 8).map((session, index) => {
+                      const live = !session.endedAt;
+                      const gameIcon = session.gameIconUrl;
+                      const gameInitial = (session.gameName || '?').trim().charAt(0).toUpperCase();
+                      const when = session.startedAt || session.endedAt;
                       return (
-                        <div key={event.id} className="flex items-start gap-3 rounded-lg border border-line bg-ink p-3">
-                          <span
-                            className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-sm font-bold ${
-                              isStart
-                                ? 'bg-emerald-400/10 text-emerald-300'
-                                : isStop
-                                  ? 'bg-zinc-500/10 text-zinc-300'
-                                  : 'bg-neon-amber/10 text-neon-amber'
-                            }`}
-                          >
-                            {isStart ? '▶' : isStop ? '⏹' : '📊'}
-                          </span>
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium text-zinc-100">
-                              {isStart ? 'Started playing' : isStop ? 'Left the game' : 'Playtime adjusted'}
+                        <div
+                          key={`${session.gameName}-${when}-${index}`}
+                          className="flex items-center gap-3 rounded-lg border border-line bg-ink p-3"
+                        >
+                          {/* Game icon (real Roblox game thumbnail when available) */}
+                          {gameIcon ? (
+                            <img
+                              src={gameIcon}
+                              alt=""
+                              className="h-10 w-10 shrink-0 rounded-lg border border-line object-cover"
+                              onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+                            />
+                          ) : (
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line bg-panelSoft text-sm font-bold text-neon-cyan/80">
+                              {gameInitial}
+                            </span>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate text-sm font-semibold text-zinc-100">{session.gameName}</span>
+                              {live && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                                  LIVE
+                                </span>
+                              )}
                             </div>
-                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-mist">
-                              <Clock className="h-3 w-3" />
-                              {timeAgo(event.occurredAt)}
-                              {isAdjust && event.deltaSeconds !== 0 && (
-                                <span className="text-neon-amber"> ({event.deltaSeconds > 0 ? '+' : ''}{formatDuration(event.deltaSeconds)})</span>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-mist">
+                              <span className="inline-flex items-center gap-1">
+                                <Play className="h-3 w-3 text-emerald-400" />
+                                {session.startedAt ? formatDateTime(session.startedAt) : '—'}
+                              </span>
+                              <span className="inline-flex items-center gap-1">
+                                <Square className="h-3 w-3 text-zinc-400" />
+                                {session.endedAt ? formatDateTime(session.endedAt) : 'now'}
+                              </span>
+                              {session.startedAt && session.endedAt && (
+                                <span className="text-zinc-400">
+                                  {formatDuration(Math.max(0, (new Date(session.endedAt) - new Date(session.startedAt)) / 1000))}
+                                </span>
                               )}
                             </div>
                           </div>
                         </div>
                       );
                     })}
+                    {details?.recentActivity?.some((e) => e.eventType === 'Adjusted') && (
+                      <div className="px-1 pt-1 text-[11px] text-zinc-500">
+                        Manual playtime adjustments are listed in the tracker event log on the dashboard.
+                      </div>
+                    )}
                   </div>
+                ) : details?.recentActivity?.length > 0 ? (
+                  <p className="text-sm text-mist">No game sessions recorded yet — only manual adjustments.</p>
                 ) : (
                   <p className="text-sm text-mist">No activity recorded yet.</p>
                 )}
