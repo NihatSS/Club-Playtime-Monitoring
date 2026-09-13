@@ -13,10 +13,12 @@ import {
   EyeOff,
   Flame,
   Gamepad2,
+  ImagePlus,
   KeyRound,
   Link2,
   Medal,
   Pencil,
+  RotateCcw,
   Save,
   ShieldCheck,
   Star,
@@ -35,6 +37,36 @@ import Header from './Header';
 
 const DISCORD_COPY_HINT =
   "Use Discord's Developer Mode, then right-click your profile and choose Copy User ID.";
+
+/**
+ * Website presence: derived from real tracker data.
+ *  - green  = in the tracked game right now (player.IsOnline from the monitor)
+ *  - blue   = active on the website in the last 10 minutes (LastSeenOnSite heartbeat)
+ *  - grey   = offline
+ */
+function getPresence(details) {
+  if (details?.currentStatus === 'Online') return 'game';
+  const seen = details?.lastSeenOnSite ? new Date(details.lastSeenOnSite).getTime() : 0;
+  if (seen && Date.now() - seen < 10 * 60 * 1000) return 'site';
+  return 'offline';
+}
+
+const PRESENCE_STYLES = {
+  game: { dot: 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]', label: 'In game', text: 'text-emerald-300' },
+  site: { dot: 'bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.9)]', label: 'On the website', text: 'text-sky-300' },
+  offline: { dot: 'bg-zinc-500', label: 'Offline', text: 'text-mist' }
+};
+
+function PresenceDot({ details, size = 'h-4 w-4', border = 'border-2 border-panel' }) {
+  const presence = getPresence(details);
+  const style = PRESENCE_STYLES[presence];
+  return (
+    <span
+      className={`absolute -bottom-0.5 -right-0.5 rounded-full ${size} ${border} ${style.dot}`}
+      title={style.label}
+    />
+  );
+}
 
 export function PasswordChecklist({ password }) {
   const issues = passwordIssues(password);
@@ -175,6 +207,11 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   const [gameBusy, setGameBusy] = useState(false);
   const [gameForm, setGameForm] = useState({ robloxUsername: '', robloxUserId: '', discordUserId: '' });
 
+  // Banner picker state (own profile only)
+  const [bannerEditing, setBannerEditing] = useState(false);
+  const [bannerInput, setBannerInput] = useState('');
+  const [bannerBusy, setBannerBusy] = useState(false);
+
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -265,6 +302,24 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     }
   }
 
+  async function handleBannerSave(reset = false) {
+    setBannerBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const value = reset ? '' : bannerInput.trim();
+      const result = await api.updateBanner(value);
+      setNotice(result.message ?? 'Banner updated.');
+      setBannerEditing(false);
+      setBannerInput('');
+      await loadProfile();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBannerBusy(false);
+    }
+  }
+
   async function handlePasswordChange(event) {
     event.preventDefault();
     setError('');
@@ -331,7 +386,8 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   const joinRequest = profile.joinRequest;
   const discordLinked = !!profile.discordUserId;
   const progress = profile.progress;
-  const isOnline = details?.currentStatus === 'Online';
+  const presence = getPresence(details);
+  const presenceStyle = PRESENCE_STYLES[presence];
   const displayName = player?.username ?? profile.robloxUsername ?? profile.username;
   const displayAvatar = player?.avatarUrl ?? avatarUrl;
   const displayRobloxId = player?.robloxUserId ?? profile.robloxUserId;
@@ -377,8 +433,79 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
           <div className="space-y-5">
             {/* ─── HERO BANNER ─── */}
             <div className="relative overflow-hidden rounded-xl border border-line shadow-glow">
-              <div className="absolute inset-0 bg-gradient-to-br from-[#221a4d] via-[#1b1440] to-[#0a0a1a]" />
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_20%,rgba(179,71,234,0.18),transparent_55%),radial-gradient(ellipse_at_20%_90%,rgba(0,229,255,0.12),transparent_50%)]" />
+              {/* Custom banner image (if set), otherwise the default gradient */}
+              {profile.bannerUrl ? (
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#221a4d] via-[#1b1440] to-[#0a0a1a]" />
+                  <img
+                    src={profile.bannerUrl}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a1a]/80 via-transparent to-[#0a0a1a]/30" />
+                </>
+              ) : (
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#221a4d] via-[#1b1440] to-[#0a0a1a]" />
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_20%,rgba(179,71,234,0.18),transparent_55%),radial-gradient(ellipse_at_20%_90%,rgba(0,229,255,0.12),transparent_50%)]" />
+                </>
+              )}
+
+              {/* Banner image controls (own profile) */}
+              {bannerEditing ? (
+                <div className="absolute right-3 top-3 z-10 w-72 rounded-lg border border-neon-cyan/20 bg-[#0d0d1a]/95 p-3 shadow-2xl backdrop-blur">
+                  <div className="text-xs font-semibold text-zinc-200">Banner image</div>
+                  <input
+                    type="url"
+                    value={bannerInput}
+                    onChange={(e) => setBannerInput(e.target.value)}
+                    placeholder="https://example.com/banner.jpg"
+                    className="mt-2 w-full rounded-md border border-line bg-ink px-2.5 py-1.5 text-xs text-zinc-50 placeholder:text-zinc-500 focus:border-neon-cyan/50 focus:outline-none"
+                    autoFocus
+                  />
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleBannerSave(false)}
+                      disabled={bannerBusy || !bannerInput.trim()}
+                      className="inline-flex items-center gap-1 rounded-md bg-neon-cyan px-2.5 py-1 text-[11px] font-bold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-50"
+                    >
+                      <Save className="h-3 w-3" />
+                      {bannerBusy ? 'Saving…' : 'Save'}
+                    </button>
+                    {profile.bannerUrl && (
+                      <button
+                        type="button"
+                        onClick={() => handleBannerSave(true)}
+                        disabled={bannerBusy}
+                        className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100 disabled:opacity-50"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Reset
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { setBannerEditing(false); setBannerInput(''); }}
+                      className="ml-auto text-[11px] text-zinc-500 transition hover:text-zinc-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setBannerEditing(true); setBannerInput(profile.bannerUrl ?? ''); }}
+                  title="Set or change banner image"
+                  className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-200 backdrop-blur transition hover:bg-black/60"
+                >
+                  <ImagePlus className="h-3.5 w-3.5" />
+                  {profile.bannerUrl ? 'Change banner' : 'Add banner'}
+                </button>
+              )}
+
               <div className="relative flex flex-wrap items-center gap-5 p-6">
                 <div className="relative shrink-0">
                   {displayAvatar ? (
@@ -388,12 +515,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                       {displayName.slice(0, 1).toUpperCase()}
                     </div>
                   )}
-                  {player && (
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-panel ${isOnline ? 'bg-emerald-400' : 'bg-zinc-500'}`}
-                      title={isOnline ? 'Online' : 'Offline'}
-                    />
-                  )}
+                  {player && <PresenceDot details={details} />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-2xl font-bold text-zinc-50">{displayName}</div>
@@ -824,16 +946,14 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                 </a>
                 <div className="mt-3 rounded-lg border border-line bg-ink p-3">
                   <div className="flex items-center gap-2 text-sm">
-                    <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-zinc-500'}`} />
-                    <span className={isOnline ? 'font-medium text-emerald-300' : 'text-mist'}>
-                      {details?.currentStatus || 'Offline'}
-                    </span>
+                    <span className={`h-2 w-2 rounded-full ${presenceStyle.dot}`} />
+                    <span className={`font-medium ${presenceStyle.text}`}>{presenceStyle.label}</span>
                   </div>
-                  {details?.currentGame && (
+                  {presence === 'game' && details?.currentGame && (
                     <div className="mt-1 truncate text-xs text-mist">Playing {details.currentGame}</div>
                   )}
-                  {!isOnline && details?.lastSeenPlaying && (
-                    <div className="mt-1 text-xs text-mist">Last seen {formatDateTime(details.lastSeenPlaying)}</div>
+                  {presence === 'offline' && details?.lastSeenPlaying && (
+                    <div className="mt-1 text-xs text-mist">Last seen in game {formatDateTime(details.lastSeenPlaying)}</div>
                   )}
                 </div>
               </Card>

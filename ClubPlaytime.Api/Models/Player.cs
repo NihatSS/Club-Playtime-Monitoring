@@ -28,6 +28,12 @@ public sealed class Player
 
     public DateTime UpdatedAt { get; set; }
 
+    /// <summary>
+    /// Last time a website account linked to this player was active on the
+    /// site (UTC). Drives the "on the website" presence state.
+    /// </summary>
+    public DateTime? LastSeenOnSite { get; set; }
+
     public ICollection<DailyPlaytime> DailyPlaytimes { get; set; } = new List<DailyPlaytime>();
 
     public ICollection<PlayerActivityEvent> ActivityEvents { get; set; } = new List<PlayerActivityEvent>();

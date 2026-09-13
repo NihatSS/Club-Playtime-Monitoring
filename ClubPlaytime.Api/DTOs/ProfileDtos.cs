@@ -20,6 +20,9 @@ public sealed class MyProfileResponse
     /// <summary>Self-reported Roblox user ID shown until a tracker player is linked.</summary>
     public long? RobloxUserId { get; set; }
 
+    /// <summary>Custom banner image shown behind the profile hero (null = default gradient).</summary>
+    public string? BannerUrl { get; set; }
+
     public ProfilePlayerDto? Player { get; set; }
 
     public ProfileJoinRequestDto? JoinRequest { get; set; }
@@ -45,6 +48,9 @@ public sealed class ProfilePlayerDto
     public long MonthlyPlaySeconds { get; set; }
     public long TotalPlaySeconds { get; set; }
     public string ProfileUrl { get; set; } = string.Empty;
+
+    /// <summary>Website presence: last time a linked website account was active on the site.</summary>
+    public DateTime? LastSeenOnSite { get; set; }
 }
 
 public sealed class ProfileJoinRequestDto
@@ -59,6 +65,14 @@ public sealed class ProfileJoinRequestDto
     public DateTime CreatedAt { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public string? ReviewedBy { get; set; }
+}
+
+/// <summary>Set or clear the custom banner image on the caller's own profile.</summary>
+public sealed class UpdateBannerRequest
+{
+    /// <summary>HTTPS image URL, or null/empty to reset to the default gradient.</summary>
+    [MaxLength(700)]
+    public string? BannerUrl { get; set; }
 }
 
 /// <summary>Link or unlink the current user's Discord account.</summary>

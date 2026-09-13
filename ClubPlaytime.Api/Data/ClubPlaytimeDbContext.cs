@@ -80,6 +80,9 @@ public sealed class ClubPlaytimeDbContext(DbContextOptions<ClubPlaytimeDbContext
             entity.Property(player => player.DiscordUserId).HasMaxLength(100);
         });
 
+        // Presence freshness is decided in code (UtcNow - LastSeenOnSite < window),
+        // never in SQL, so no translation of the comparison is needed.
+
         modelBuilder.Entity<DailyPlaytime>(entity =>
         {
             entity.ToTable("DailyPlaytime");

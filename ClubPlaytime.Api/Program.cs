@@ -182,6 +182,7 @@ using (var scope = app.Services.CreateScope())
         ApplyPostgresTournamentSchema(dbContext);
         ApplyPostgresAnnouncementSchema(dbContext);
         ApplyPostgresPlayerProgressSchema(dbContext);
+        ApplyPostgresProfilePresenceSchema(dbContext);
     }
     else
     {
@@ -521,6 +522,17 @@ static void ApplyPostgresPlayerProgressSchema(ClubPlaytimeDbContext dbContext)
         """);
 }
 
+// Profile banner + website presence for existing PostgreSQL deployments
+// (same additive pattern as the schemas above).
+static void ApplyPostgresProfilePresenceSchema(ClubPlaytimeDbContext dbContext)
+{
+    dbContext.Database.ExecuteSqlRaw("""
+        ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "BannerUrl" character varying(700) NULL;
+        ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "LastSeenOnSite" timestamp with time zone NULL;
+        ALTER TABLE "Players" ADD COLUMN IF NOT EXISTS "LastSeenOnSite" timestamp with time zone NULL;
+        """);
+}
+
 // Announcements table for existing PostgreSQL deployments (same additive
 // pattern as the tournament schema above).
 static void ApplyPostgresAnnouncementSchema(ClubPlaytimeDbContext dbContext)
@@ -555,6 +567,45 @@ app.UseStaticFiles(); // Serve static files from wwwroot
 app.UseCors("ReactClient");
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Website-presence heartbeat: for authenticated requests from users with a
+// linked tracker player, stamp LastSeenOnSite on the user and player rows at
+// most once per 4 minutes. Lets the client show "on the website" vs "in game"
+// vs "offline" without any extra requests or infrastructure.
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true)
+    {
+        try
+        {
+            var db = context.RequestServices.GetRequiredService<ClubPlaytime.Api.Data.ClubPlaytimeDbContext>();
+            var cutoff = DateTime.UtcNow.AddMinutes(-4);
+            var identityName = context.User.Identity!.Name;
+            var user = await db.Users
+                .FirstOrDefaultAsync(u => u.Username == identityName && (u.LastSeenOnSite == null || u.LastSeenOnSite < cutoff));
+            if (user is not null)
+            {
+                var now = DateTime.UtcNow;
+                user.LastSeenOnSite = now;
+                if (user.PlayerId is not null)
+                {
+                    var player = await db.Players.FirstOrDefaultAsync(p => p.Id == user.PlayerId.Value);
+                    if (player is not null && (player.LastSeenOnSite == null || player.LastSeenOnSite < cutoff))
+                    {
+                        player.LastSeenOnSite = now;
+                    }
+                }
+                await db.SaveChangesAsync();
+            }
+        }
+        catch
+        {
+            // Presence stamping must never break a request.
+        }
+    }
+
+    await next();
+});
 
 if (app.Environment.IsDevelopment())
 {

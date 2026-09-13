@@ -227,7 +227,7 @@ export default function RegisterFlow({ onLogin, onSwitchToLogin }) {
       {/* ─── STEP: CHOICE ─── */}
       {step === 'choice' && (
         <>
-          <StepHeader step="choice" title="Create your account" subtitle="Already registered? Use the button in the top-right to switch to login." />
+          <StepHeader step="choice" title="Create your account" subtitle="Already registered? Switch back to login using the link below." />
           <div className="space-y-3">
             <button
               type="button"

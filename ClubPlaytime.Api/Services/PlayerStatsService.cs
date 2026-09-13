@@ -84,7 +84,8 @@ public sealed class PlayerStatsService(
             last30Days,
             recentActivity.Select(ToActivityDto).ToList())
         {
-            Progress = progress
+            Progress = progress,
+            LastSeenOnSite = player.LastSeenOnSite
         };
     }
 

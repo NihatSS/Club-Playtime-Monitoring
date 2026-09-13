@@ -137,6 +137,13 @@ export const api = {
       body: JSON.stringify(body)
     }),
 
+  // Set (or clear with '') the custom banner image on the caller's profile hero
+  updateBanner: (bannerUrl) =>
+    request('/api/profile/banner', {
+      method: 'POST',
+      body: JSON.stringify({ bannerUrl })
+    }),
+
   // Admin: user management (Phase 8)
   getUsers: () => request('/api/admin/users'),
   getUserDetail: (id) => request(`/api/admin/users/${id}`),

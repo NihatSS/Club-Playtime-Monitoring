@@ -20,13 +20,6 @@ export default function AuthPage({ onLogin, onClose }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setMode((m) => (m === 'login' ? 'register' : 'login'))}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neon-cyan/[0.08] px-3 text-sm font-medium text-zinc-300 transition hover:bg-neon-cyan/[0.06]"
-            >
-              {mode === 'login' ? 'Register' : 'Back to login'}
-            </button>
             {onClose && (
               <button
                 type="button"

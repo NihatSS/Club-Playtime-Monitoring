@@ -203,6 +203,9 @@ public sealed class PlayerDetailsDto
     /// <summary>Streaks, achievements count and rank derived from real tracker data. Null for very old cached clients.</summary>
     public PlayerProgressSummaryDto? Progress { get; set; }
 
+    /// <summary>Last time a website account linked to this player was active on the site (null = never).</summary>
+    public DateTime? LastSeenOnSite { get; set; }
+
     public PlayerDetailsDto() { }
 
     public PlayerDetailsDto(int id, string username, string profileUrl, long robloxUserId, string currentStatus, string? currentGame, DateTime? lastSeenPlaying, long todayPlaySeconds, long weeklyPlaySeconds, long monthlyPlaySeconds, long totalPlaySeconds, string? avatarUrl, string club, string? discordUserId, DateTime createdAt, IReadOnlyList<DailyPlaytimeDto> last30Days, IReadOnlyList<ActivityEventDto> recentActivity)

@@ -41,7 +41,8 @@ public sealed class ProfileController(
             CreatedAt = user.CreatedAt,
             DiscordUserId = user.DiscordUserId,
             RobloxUsername = user.Player?.Username ?? user.RobloxUsername,
-            RobloxUserId = user.Player?.RobloxUserId ?? user.RobloxUserId
+            RobloxUserId = user.Player?.RobloxUserId ?? user.RobloxUserId,
+            BannerUrl = user.BannerUrl
         };
 
         if (user.PlayerId is not null)
@@ -60,7 +61,8 @@ public sealed class ProfileController(
                     WeeklyPlaySeconds = details.WeeklyPlaySeconds,
                     MonthlyPlaySeconds = details.MonthlyPlaySeconds,
                     TotalPlaySeconds = details.TotalPlaySeconds,
-                    ProfileUrl = details.ProfileUrl
+                    ProfileUrl = details.ProfileUrl,
+                    LastSeenOnSite = details.LastSeenOnSite
                 };
 
                 (response.WeeklyLeaderboardPosition, response.TotalLeaderboardPosition) =
@@ -101,6 +103,46 @@ public sealed class ProfileController(
         }
 
         return Ok(response);
+    }
+
+    /// <summary>
+    /// Set or clear the custom banner image on the caller's own profile hero.
+    /// Only HTTPS image URLs are accepted (stored as-is; rendered by the client);
+    /// an empty value resets to the default gradient.
+    /// </summary>
+    [HttpPost("banner")]
+    public async Task<IActionResult> UpdateBanner(UpdateBannerRequest request, CancellationToken cancellationToken)
+    {
+        var currentUsername = User.Identity?.Name;
+        var user = await dbContext.Users
+            .FirstOrDefaultAsync(u => u.Username == currentUsername, cancellationToken);
+
+        if (user is null)
+        {
+            return Unauthorized(new { message = "User not found." });
+        }
+
+        var bannerUrl = (request.BannerUrl ?? string.Empty).Trim();
+
+        if (bannerUrl.Length == 0)
+        {
+            user.BannerUrl = null;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Ok(new { message = "Banner reset to default.", bannerUrl = (string?)null });
+        }
+
+        if (!Uri.TryCreate(bannerUrl, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps)
+        {
+            return BadRequest(new { message = "Banner must be an HTTPS image URL." });
+        }
+
+        if (bannerUrl.Length > 700)
+        {
+            return BadRequest(new { message = "Banner URL must be 700 characters or fewer." });
+        }
+        user.BannerUrl = bannerUrl;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Ok(new { message = "Banner updated.", bannerUrl });
     }
 
     /// <summary>
