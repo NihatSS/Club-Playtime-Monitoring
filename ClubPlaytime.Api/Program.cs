@@ -223,57 +223,145 @@ builder.Services.AddHostedService<PlayerMonitoringHostedService>();
 
 var app = builder.Build();
 
+// Whether startup database initialization succeeded. When false the app runs
+// DEGRADED: /api requests get 503 until the background init loop recovers.
+// (Kept as a captured local so both the request gate and the retry loop see it.)
+var dbReady = false;
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ClubPlaytimeDbContext>();
-    if (databaseProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
-        databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+
+    // Startup DB initialization with patient retries. Hosted Postgres (Neon)
+    // suspends idle databases and hard-stops the container when the free
+    // compute quota is exhausted (PostgresException 53000). The previous code
+    // let that exception escape Program.Main, so the process crashed, Railway
+    // restarted it, and the restart loop burned even more quota. Now:
+    //  - retry with growing backoff (survives cold wakes),
+    //  - if still failing, log clearly and CONTINUE STARTING so the app can
+    //    respond 503 while the background init keeps retrying — a crash-loop
+    //    is strictly worse than a degraded app.
+    for (var attempt = 1; attempt <= 5; attempt++)
     {
-        // PostgreSQL: create a new schema from the model, then apply the small,
-        // additive compatibility upgrades below for databases that already existed.
-        // EnsureCreated intentionally does not update an existing database.
-        // Hosted Postgres (Neon) suspends idle databases; a cold wake-up can make
-        // the very first startup command fail — retry before giving up so a cold
-        // start doesn't crash-loop the container.
-        for (var attempt = 1; ; attempt++)
+        try
+        {
+            if (databaseProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+                databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+            {
+                // Create a new schema from the model; the additive compatibility
+                // upgrades below cover databases that already existed.
+                dbContext.Database.EnsureCreated();
+                ApplyPostgresIndexes(dbContext);
+                ApplyPostgresAccountLinkSchema(dbContext);
+                ApplyPostgresTournamentSchema(dbContext);
+                ApplyPostgresAnnouncementSchema(dbContext);
+                ApplyPostgresPlayerProgressSchema(dbContext);
+                ApplyPostgresProfilePresenceSchema(dbContext);
+            }
+            else
+            {
+                // SQLite / SqlServer: apply existing migrations
+                dbContext.Database.Migrate();
+                ApplySqliteIndexes(dbContext);
+            }
+
+            // Seed matiaspro admin user if it doesn't exist yet
+            if (!dbContext.Users.Any(u => u.Username == "matiaspro"))
+            {
+                dbContext.Users.Add(new User
+                {
+                    Username = "matiaspro",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Playtimetracker123_"),
+                    Role = "Admin",
+                    CreatedAt = DateTime.UtcNow
+                });
+                dbContext.SaveChanges();
+            }
+
+            dbReady = true;
+            break;
+        }
+        catch (Exception ex)
+        {
+            if (attempt < 5)
+            {
+                app.Logger.LogWarning(ex,
+                    "Database initialization attempt {Attempt}/5 failed; retrying in {Delay}s…",
+                    attempt, 5 * attempt);
+                await Task.Delay(TimeSpan.FromSeconds(5 * attempt));
+            }
+            else
+            {
+                // Final attempt: log and fall through to DEGRADED mode instead of
+                // letting the exception escape Main (which crash-loops the
+                // container and burns more of the provider's quota on restarts).
+                app.Logger.LogError(ex,
+                    "Database initialization failed after 5 attempts. Starting DEGRADED: /api returns 503 until the database recovers.");
+            }
+        }
+    }
+
+    if (!dbReady)
+    {
+        app.Logger.LogError(
+            "Entering DEGRADED mode: the database is unreachable. Static files still serve; /api answers 503. Background init retries every 2 minutes.");
+    }
+}
+
+if (!dbReady)
+{
+    // Background keep-trying loop. Each attempt uses its OWN scope so we never
+    // touch the (now disposed) startup scope's DbContext. When the Neon quota
+    // resets or the database wakes, initialization completes and the gate below
+    // starts letting requests through — no redeploy or restart needed.
+    _ = Task.Run(async () =>
+    {
+        while (!dbReady)
         {
             try
             {
-                dbContext.Database.EnsureCreated();
-                break;
+                await Task.Delay(TimeSpan.FromMinutes(2));
+                using var retryScope = app.Services.CreateScope();
+                var retryDb = retryScope.ServiceProvider.GetRequiredService<ClubPlaytimeDbContext>();
+
+                if (databaseProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+                    databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+                {
+                    retryDb.Database.EnsureCreated();
+                    ApplyPostgresIndexes(retryDb);
+                    ApplyPostgresAccountLinkSchema(retryDb);
+                    ApplyPostgresTournamentSchema(retryDb);
+                    ApplyPostgresAnnouncementSchema(retryDb);
+                    ApplyPostgresPlayerProgressSchema(retryDb);
+                    ApplyPostgresProfilePresenceSchema(retryDb);
+                }
+                else
+                {
+                    retryDb.Database.Migrate();
+                    ApplySqliteIndexes(retryDb);
+                }
+
+                if (!retryDb.Users.Any(u => u.Username == "matiaspro"))
+                {
+                    retryDb.Users.Add(new User
+                    {
+                        Username = "matiaspro",
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword("Playtimetracker123_"),
+                        Role = "Admin",
+                        CreatedAt = DateTime.UtcNow
+                    });
+                    retryDb.SaveChanges();
+                }
+
+                dbReady = true;
+                app.Logger.LogInformation("Database recovered — initialization complete. API fully live.");
             }
-            catch (Exception ex) when (attempt < 3)
+            catch (Exception retryEx)
             {
-                app.Logger.LogWarning(ex, "Database EnsureCreated attempt {Attempt} failed; retrying…", attempt);
-                await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
+                app.Logger.LogWarning(retryEx, "Background database initialization retry failed; trying again in 2 minutes.");
             }
         }
-        ApplyPostgresIndexes(dbContext);
-        ApplyPostgresAccountLinkSchema(dbContext);
-        ApplyPostgresTournamentSchema(dbContext);
-        ApplyPostgresAnnouncementSchema(dbContext);
-        ApplyPostgresPlayerProgressSchema(dbContext);
-        ApplyPostgresProfilePresenceSchema(dbContext);
-    }
-    else
-    {
-        // SQLite / SqlServer: apply existing migrations
-        dbContext.Database.Migrate();
-        ApplySqliteIndexes(dbContext);
-    }
-
-    // Seed matiaspro admin user if it doesn't exist yet
-    if (!dbContext.Users.Any(u => u.Username == "matiaspro"))
-    {
-        dbContext.Users.Add(new User
-        {
-            Username = "matiaspro",
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Playtimetracker123_"),
-            Role = "Admin",
-            CreatedAt = DateTime.UtcNow
-        });
-        dbContext.SaveChanges();
-    }
+    });
 }
 
 // EF's checked-in migrations target SQLite.  The production PostgreSQL database
@@ -710,6 +798,24 @@ app.Use(async (context, next) =>
 });
 app.UseOutputCache();
 
+// Degraded-mode gate: if startup DB initialization never succeeded (e.g. Neon
+// quota exhausted), answer /api with a clean 503 instead of letting every
+// request throw and surface as a 500. Static files still serve, so users see
+// the site shell; the background init loop flips this off automatically when
+// the database recovers — no restart or redeploy needed.
+app.Use(async (context, next) =>
+{
+    if (!dbReady && context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        context.Response.Headers.RetryAfter = "60";
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsync("{\"message\":\"Service temporarily unavailable — the database is waking up. Please retry in a minute.\"}");
+        return;
+    }
+    await next();
+});
+
 // Website-presence heartbeat: for authenticated requests from users with a
 // linked tracker player, stamp LastSeenOnSite on the user and player rows at
 // most once per 4 minutes. Lets the client show "on the website" vs "in game"
@@ -718,7 +824,7 @@ app.UseOutputCache();
 // plus a full save per authenticated request, adding writes and latency).
 app.Use(async (context, next) =>
 {
-    if (context.User.Identity?.IsAuthenticated == true)
+    if (dbReady && context.User.Identity?.IsAuthenticated == true)
     {
         try
         {
