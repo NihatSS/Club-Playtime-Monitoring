@@ -14,7 +14,8 @@ public sealed class PlayerStatsService(
     IRobloxAvatarClient avatarClient,
     IRobloxGameInfoClient gameInfoClient,
     IOptionsMonitor<MonitoringOptions> options,
-    PlayerProgressService progressService) : IPlayerStatsService
+    PlayerProgressService progressService,
+    IPlayerMonitorRunner monitorRunner) : IPlayerStatsService
 {
     public async Task<IReadOnlyList<PlayerDto>> GetPlayersAsync(CancellationToken cancellationToken = default)
     {
@@ -131,6 +132,10 @@ public sealed class PlayerStatsService(
 
         await playerRepository.AddAsync(player, cancellationToken);
         await playerRepository.SaveChangesAsync(cancellationToken);
+
+        // The monitor keeps its roster in memory to avoid querying the database
+        // every cycle; tell it the roster changed instead of waiting for the TTL.
+        monitorRunner.InvalidateRoster();
         return ToPlayerDto(player, 0);
     }
 
@@ -144,6 +149,7 @@ public sealed class PlayerStatsService(
 
         playerRepository.Remove(player);
         await playerRepository.SaveChangesAsync(cancellationToken);
+        monitorRunner.InvalidateRoster();
         return true;
     }
 

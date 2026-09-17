@@ -6,6 +6,14 @@ public sealed class MonitoringOptions
 
     public int CheckIntervalSeconds { get; set; } = 60;
 
+    /// <summary>
+    /// How long the monitor reuses its in-memory player roster before re-reading
+    /// the Players table. Re-reading it every cycle would itself keep a serverless
+    /// database awake 24/7, so this is deliberately measured in minutes; player
+    /// adds/removes and the admin "check now" button refresh it immediately.
+    /// </summary>
+    public int RosterCacheSeconds { get; set; } = 600;
+
     public string TargetGameName { get; set; } = "Racket Rivals";
 
     public string RobloxBaseUrl { get; set; } = "https://www.roblox.com";

@@ -12,7 +12,9 @@ public sealed class MonitorController(IPlayerMonitorRunner monitorRunner) : Cont
     [HttpPost("check-now")]
     public async Task<ActionResult<MonitorRunResult>> CheckNow(CancellationToken cancellationToken)
     {
-        var result = await monitorRunner.CheckAllPlayersAsync(cancellationToken);
+        // A manual check is the "something looks wrong, look now" button, so it
+        // bypasses the in-memory roster cache instead of waiting for its TTL.
+        var result = await monitorRunner.CheckAllPlayersAsync(cancellationToken, forceRosterRefresh: true);
         return Ok(result);
     }
 }

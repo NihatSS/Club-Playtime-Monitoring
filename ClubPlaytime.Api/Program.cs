@@ -227,6 +227,11 @@ builder.Services.AddHostedService<PlayerMonitoringHostedService>();
 // pauses its DB polling while the database is unreachable.
 var dbReady = false;
 
+// Why the API is degraded, used for the 503 body. A hosted provider that has
+// run out of compute quota is NOT "waking up", and telling users that makes a
+// billing problem look like a cold start.
+var degradedReason = "the database is waking up";
+
 var app = builder.Build();
 
 // Degraded-state flag shared with the monitoring loop.
@@ -287,6 +292,22 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Exception ex)
         {
+            // Quota/limit stops are not transient: the provider refuses every
+            // connection until the quota resets or the plan is upgraded. Burning
+            // through the remaining attempts only floods the log, so go straight
+            // to DEGRADED mode and let the low-frequency background loop watch
+            // for recovery.
+            if (IsQuotaExceeded(ex))
+            {
+                degradedReason = "the database provider has stopped serving requests (plan limit reached)";
+                app.Logger.LogError(ex,
+                    "Database provider refused the connection because a plan limit was reached "
+                    + "(Postgres 53000). This does NOT clear on retry — it clears when the provider's "
+                    + "quota resets or the plan is upgraded. Starting DEGRADED: /api returns 503; "
+                    + "the background loop keeps a slow recovery heartbeat.");
+                break;
+            }
+
             if (attempt < 5)
             {
                 app.Logger.LogWarning(ex,
@@ -308,7 +329,8 @@ using (var scope = app.Services.CreateScope())
     if (!dbReady)
     {
         app.Logger.LogError(
-            "Entering DEGRADED mode: the database is unreachable. Static files still serve; /api answers 503. Background init retries every 2 minutes.");
+            "Entering DEGRADED mode: the database is unreachable. Static files still serve; /api answers 503. "
+            + "A background loop keeps retrying (every 2 minutes, or every 30 minutes while the provider reports a plan limit).");
     }
 }
 
@@ -320,11 +342,18 @@ if (!dbReady)
     // starts letting requests through — no redeploy or restart needed.
     _ = Task.Run(async () =>
     {
+        // Transient failures (cold wake, maintenance) get a 2-minute retry.
+        // Plan-limit stops get a 30-minute heartbeat: retrying faster would just
+        // add log noise while the quota is exhausted, and 30 minutes is far
+        // below the cost of a missed recovery since the API simply stays in 503.
+        var retryDelay = TimeSpan.FromMinutes(2);
+        var quotaReported = false;
+
         while (!dbReady)
         {
             try
             {
-                await Task.Delay(TimeSpan.FromMinutes(2));
+                await Task.Delay(retryDelay);
                 using var retryScope = app.Services.CreateScope();
                 var retryDb = retryScope.ServiceProvider.GetRequiredService<ClubPlaytimeDbContext>();
 
@@ -362,10 +391,45 @@ if (!dbReady)
             }
             catch (Exception retryEx)
             {
-                app.Logger.LogWarning(retryEx, "Background database initialization retry failed; trying again in 2 minutes.");
+                if (IsQuotaExceeded(retryEx))
+                {
+                    retryDelay = TimeSpan.FromMinutes(30);
+                    if (!quotaReported)
+                    {
+                        quotaReported = true;
+                        app.Logger.LogError(retryEx,
+                            "Database provider still reports a plan limit (Postgres 53000). The project stays "
+                            + "stopped until the quota resets or the plan is upgraded; the API keeps answering 503. "
+                            + "Now retrying every 30 minutes instead of every 2 minutes.");
+                    }
+                }
+                else
+                {
+                    retryDelay = TimeSpan.FromMinutes(2);
+                    quotaReported = false;
+                    app.Logger.LogWarning(retryEx, "Background database initialization retry failed; trying again in 2 minutes.");
+                }
             }
         }
     });
+}
+
+// Hosted Postgres providers answer with SQLSTATE 53000 (insufficient_resources)
+// when a project hits its limit — Neon's free plan, for example, stops the
+// project and returns:
+//   "Your account or project has exceeded the compute time quota."
+// That is a billing state, not a transient fault: no retry, backoff or connection
+// tweak can bring the database back. Identifying it lets the app back off to a
+// slow heartbeat and tell the truth in the 503 body instead of thrashing.
+static bool IsQuotaExceeded(Exception? ex)
+{
+    return ex switch
+    {
+        null => false,
+        Npgsql.PostgresException pg => pg.SqlState == "53000"
+            || pg.MessageText.Contains("quota", StringComparison.OrdinalIgnoreCase),
+        _ => IsQuotaExceeded(ex.InnerException)
+    };
 }
 
 // EF's checked-in migrations target SQLite.  The production PostgreSQL database
@@ -814,7 +878,11 @@ app.Use(async (context, next) =>
         context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
         context.Response.Headers.RetryAfter = "60";
         context.Response.ContentType = "application/json";
-        await context.Response.WriteAsync("{\"message\":\"Service temporarily unavailable — the database is waking up. Please retry in a minute.\"}");
+        await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            message = $"Service temporarily unavailable — {degradedReason}. Please retry in a minute.",
+            retryAfterSeconds = 60
+        }));
         return;
     }
     await next();

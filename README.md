@@ -129,6 +129,7 @@ Tracker settings live in [appsettings.json](ClubPlaytime.Api/appsettings.json):
 ```json
 "Monitoring": {
   "CheckIntervalSeconds": 60,
+  "RosterCacheSeconds": 600,
   "TargetGameName": "Racket Rivals",
   "RobloxBaseUrl": "https://www.roblox.com",
   "RequestTimeoutSeconds": 20,
@@ -186,6 +187,22 @@ It reads the configured presence selector and uses the element `title`. If the t
 `LastSeenPlaying` stores the last accounted UTC polling time. When the next check still sees the player in the target game, elapsed seconds are added to both `Players.TotalPlaySeconds` and the one daily row for that player/date.
 
 Roblox request errors are logged and retried on the next interval. The worker keeps running.
+
+## Hosted Database Usage
+
+The monitor is deliberately database-light so a free or cheap hosted Postgres survives the month:
+
+- Each cycle calls the Roblox presence API only — no database round trip — and compares the result with the last successful sample kept in memory.
+- It touches the database only when there is something to record: a player is in the target game (playtime accrues per check), or a player's online/game state changed.
+- The player roster is cached in memory for `RosterCacheSeconds` (default 600) instead of being re-read every cycle. Adding/removing a player, or the admin "check now" button, refreshes it immediately.
+
+This matters on serverless Postgres (Neon and similar): those providers meter compute only while the database is awake and suspend it after a few idle minutes, so a tracker that queried the database every 60 seconds kept the project running 24/7 — roughly 720 compute-hours a month against a free allowance of roughly 190. That is why a project can die after about a week with:
+
+```text
+Npgsql.PostgresException: 53000: Your account or project has exceeded the compute time quota.
+```
+
+When that happens the API answers `503` naming the real reason and the background recovery loop retries every 30 minutes (instead of every 2), so the site comes back on its own once the quota resets or the plan is upgraded. Raise `RosterCacheSeconds` (or, less preferably, `CheckIntervalSeconds`) if a plan still runs out.
 
 ## Security Notes
 
