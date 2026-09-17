@@ -221,12 +221,16 @@ builder.Services.AddSingleton<IRobloxGameInfoClient, RobloxGameInfoClient>();
 builder.Services.AddSingleton<IPlayerMonitorRunner, PlayerMonitorRunner>();
 builder.Services.AddHostedService<PlayerMonitoringHostedService>();
 
-var app = builder.Build();
-
 // Whether startup database initialization succeeded. When false the app runs
 // DEGRADED: /api requests get 503 until the background init loop recovers.
-// (Kept as a captured local so both the request gate and the retry loop see it.)
+// Also read by PlayerMonitoringHostedService (via RunnerGate) so the monitor
+// pauses its DB polling while the database is unreachable.
 var dbReady = false;
+
+var app = builder.Build();
+
+// Degraded-state flag shared with the monitoring loop.
+ClubPlaytime.Api.Services.RunnerGate.DatabaseReady = () => dbReady;
 
 using (var scope = app.Services.CreateScope())
 {
@@ -892,7 +896,13 @@ internal sealed class GlobalExceptionHandler(ILogger<Program> logger) : IExcepti
             OperationCanceledException => (StatusCodes.Status499ClientClosedRequest, "Request cancelled"),
             Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "The record was modified by someone else. Reload and try again."),
             UnauthorizedAccessException => (StatusCodes.Status403Forbidden, "Forbidden"),
-            _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
+            // DB became unavailable mid-run (quota stop, cold wake, maintenance):
+            // a clean, retryable 503 beats a misleading 500.
+            Npgsql.NpgsqlException or
+            Npgsql.PostgresException or
+            Microsoft.EntityFrameworkCore.Storage.RetryLimitExceededException
+                => (StatusCodes.Status503ServiceUnavailable, "The database is temporarily unavailable. Please retry shortly."),
+            _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred")
         };
 
         if (status == StatusCodes.Status500InternalServerError)
@@ -900,6 +910,13 @@ internal sealed class GlobalExceptionHandler(ILogger<Program> logger) : IExcepti
             logger.LogError(exception,
                 "Unhandled exception for {Method} {Path} (trace {TraceId})",
                 httpContext.Request.Method, httpContext.Request.Path, httpContext.TraceIdentifier);
+        }
+        else if (status == StatusCodes.Status503ServiceUnavailable)
+        {
+            // DB outages are expected operational states, not bugs — one warning
+            // line per event instead of a full stack trace per request.
+            logger.LogWarning("{Status} for {Method} {Path}: {Message}",
+                status, httpContext.Request.Method, httpContext.Request.Path, exception.Message);
         }
         else if (status != StatusCodes.Status499ClientClosedRequest)
         {

@@ -28,7 +28,15 @@ public sealed class PlayerMonitoringHostedService(
                 logger.LogError(ex, "Unhandled monitoring error. The worker will retry on the next interval.");
             }
 
-            var intervalSeconds = Math.Max(10, options.CurrentValue.CheckIntervalSeconds);
+            var intervalSeconds = options.CurrentValue.CheckIntervalSeconds;
+            // While degraded (DB unreachable), back off to 5 minutes: the retry
+            // loop in Program.cs owns recovery; the monitor only needs a slow
+            // heartbeat until the database is back.
+            if (!Services.RunnerGate.IsDatabaseReady)
+            {
+                intervalSeconds = 300;
+            }
+            intervalSeconds = Math.Max(10, intervalSeconds);
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken);

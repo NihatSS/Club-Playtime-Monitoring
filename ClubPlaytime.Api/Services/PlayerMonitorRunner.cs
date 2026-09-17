@@ -5,6 +5,19 @@ using Microsoft.Extensions.Options;
 
 namespace ClubPlaytime.Api.Services;
 
+/// <summary>
+/// Shared switches between host and monitor loop. When the database is
+/// unreachable (Neon quota stop, cold wake), the monitor pauses polling so it
+/// doesn't burn requests against a stopped database or flood the logs.
+/// </summary>
+public static class RunnerGate
+{
+    /// <summary>Set by Program.cs; returns true when the DB is initialized and usable.</summary>
+    public static Func<bool>? DatabaseReady { get; set; }
+
+    public static bool IsDatabaseReady => DatabaseReady?.Invoke() ?? true;
+}
+
 public sealed class PlayerMonitorRunner(
     IServiceScopeFactory scopeFactory,
     IOptionsMonitor<MonitoringOptions> options,
@@ -14,9 +27,16 @@ public sealed class PlayerMonitorRunner(
 
     public async Task<MonitorRunResult> CheckAllPlayersAsync(CancellationToken cancellationToken = default)
     {
+        // Database unavailable (quota stop / cold wake): skip the scan entirely
+        // instead of throwing against a stopped DB every interval.
+        if (!RunnerGate.IsDatabaseReady)
+        {
+            return new MonitorRunResult(0, 0, 0, 0, true);
+        }
+
         if (!await _scanLock.WaitAsync(0, cancellationToken))
         {
-            logger.LogInformation("Monitoring scan skipped because another scan is already running.");
+            logger.LogInformation("Monitoring scan skipped because another scan is running.");
             return new MonitorRunResult(0, 0, 0, 0, true);
         }
 
