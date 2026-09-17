@@ -3,6 +3,7 @@ using ClubPlaytime.Api.DTOs;
 using ClubPlaytime.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClubPlaytime.Api.Controllers;
@@ -17,6 +18,7 @@ public sealed class PlayersController(
 {
     private readonly IConfiguration _configuration = configuration;
     [HttpGet]
+    [OutputCache(PolicyName = "PublicShort")]
     public async Task<ActionResult<IReadOnlyList<PlayerDto>>> GetPlayers(CancellationToken cancellationToken)
     {
         var players = await playerStatsService.GetPlayersAsync(cancellationToken);
@@ -24,6 +26,7 @@ public sealed class PlayersController(
     }
 
     [HttpGet("{id:int}")]
+    [OutputCache(PolicyName = "PublicShort")]
     public async Task<ActionResult<PlayerDetailsDto>> GetPlayer(int id, CancellationToken cancellationToken)
     {
         var player = await playerStatsService.GetPlayerDetailsAsync(id, cancellationToken);

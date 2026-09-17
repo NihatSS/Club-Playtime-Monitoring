@@ -3,6 +3,7 @@ using ClubPlaytime.Api.DTOs;
 using ClubPlaytime.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClubPlaytime.Api.Controllers;
@@ -17,6 +18,7 @@ public sealed class AnnouncementsController(ClubPlaytimeDbContext dbContext) : C
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
+    [OutputCache(PolicyName = "Announcements")]
     public async Task<ActionResult<IEnumerable<AnnouncementDto>>> List(
         [FromQuery] int limit = 20)
     {

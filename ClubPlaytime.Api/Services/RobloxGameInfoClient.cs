@@ -18,47 +18,62 @@ public sealed record RobloxGameInfo(
 /// API for the name, thumbnails API for the icon) and cached for 24h per
 /// place/universe.
 /// </summary>
-public sealed class RobloxGameInfoClient(IHttpClientFactory httpClientFactory, IOptionsMonitor<MonitoringOptions> options) : IRobloxGameInfoClient
+public sealed class RobloxGameInfoClient(IHttpClientFactory httpClientFactory) : IRobloxGameInfoClient
 {
-    private static readonly Dictionary<string, RobloxGameInfo> Cache = new(StringComparer.OrdinalIgnoreCase);
+    // ConcurrentDictionary: the old Dictionary was mutated from concurrent detail-
+    // panel requests, which corrupts buckets and can throw, 500ing unrelated calls.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (RobloxGameInfo Info, DateTime CachedAt)> Cache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromHours(24);
+    private static readonly TimeSpan NegativeCacheLifetime = TimeSpan.FromMinutes(10);
 
-    public async Task<RobloxGameInfo?> GetByPlaceIdAsync(long placeId, CancellationToken cancellationToken = default)
+    // In-flight dedupe: many concurrent detail-panel opens for the same game fire
+    // ONE Roblox call instead of N (previously up to 3 sequential HTTP calls each).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Task<RobloxGameInfo?>>> InFlight = new(StringComparer.OrdinalIgnoreCase);
+
+    public Task<RobloxGameInfo?> GetByPlaceIdAsync(long placeId, CancellationToken cancellationToken = default) =>
+        GetAsync($"place:{placeId}", () => FetchAsync(placeId), cancellationToken);
+
+    public Task<RobloxGameInfo?> GetByUniverseIdAsync(long universeId, CancellationToken cancellationToken = default) =>
+        GetAsync($"universe:{universeId}", () => FetchByUniverseAsync(universeId), cancellationToken);
+
+    private static async Task<RobloxGameInfo?> GetAsync(string key, Func<Task<RobloxGameInfo?>> fetch, CancellationToken cancellationToken)
     {
-        if (Cache.TryGetValue($"place:{placeId}", out var cached) && DateTime.UtcNow - cached.CreatedUtc < CacheLifetime)
+        if (Cache.TryGetValue(key, out var cached))
         {
-            return cached;
+            var age = DateTime.UtcNow - cached.CachedAt;
+            if (age < CacheLifetime || (cached.Info is null && age < NegativeCacheLifetime))
+            {
+                // Fresh hit, or a recent negative lookup (Roblox hiccup) — don't re-fetch.
+                if (cached.Info is not null || age < NegativeCacheLifetime)
+                {
+                    return cached.Info;
+                }
+            }
         }
 
-        var info = await FetchAsync(placeId, cancellationToken);
-        if (info is null)
+        try
         {
-            // Serve the stale entry rather than nothing when Roblox hiccups.
-            return Cache.TryGetValue($"place:{placeId}", out var stale) ? stale : null;
+            var lazy = InFlight.GetOrAdd(key, k => new Lazy<Task<RobloxGameInfo?>>(fetch, LazyThreadSafetyMode.ExecutionAndPublication));
+            var info = await lazy.Value.WaitAsync(cancellationToken);
+            return info
+                ?? (Cache.TryGetValue(key, out var stale) ? stale.Info : null); // serve stale over nothing
         }
-
-        Cache[$"place:{placeId}"] = info;
-        return info;
+        finally
+        {
+            // Only remove if this fetch is still the registered one (avoid clobbering a newer retry).
+            if (InFlight.TryGetValue(key, out var done) && done.IsValueCreated && done.Value.IsCompleted)
+            {
+                InFlight.TryRemove(new KeyValuePair<string, Lazy<Task<RobloxGameInfo?>>>(key, done));
+            }
+        }
     }
 
-    public async Task<RobloxGameInfo?> GetByUniverseIdAsync(long universeId, CancellationToken cancellationToken = default)
+    private static void Store(string key, RobloxGameInfo? info)
     {
-        if (Cache.TryGetValue($"universe:{universeId}", out var cached) && DateTime.UtcNow - cached.CreatedUtc < CacheLifetime)
-        {
-            return cached;
-        }
-
-        var info = await FetchByUniverseAsync(universeId, cancellationToken);
-        if (info is null)
-        {
-            return Cache.TryGetValue($"universe:{universeId}", out var stale) ? stale : null;
-        }
-
-        Cache[$"universe:{universeId}"] = info;
-        return info;
+        Cache[key] = (info, DateTime.UtcNow);
     }
 
-    private async Task<RobloxGameInfo?> FetchAsync(long placeId, CancellationToken cancellationToken)
+    private async Task<RobloxGameInfo?> FetchAsync(long placeId)
     {
         try
         {
@@ -66,15 +81,15 @@ public sealed class RobloxGameInfoClient(IHttpClientFactory httpClientFactory, I
 
             // 1) Universe ID for the place (public places API).
             var universeResponse = await client.GetFromJsonAsync<UniverseIdResponse>(
-                $"https://apis.roblox.com/universes/v1/places/{placeId}/universe",
-                cancellationToken);
+                $"https://apis.roblox.com/universes/v1/places/{placeId}/universe");
             var universeId = universeResponse?.UniverseId;
             if (universeId is null)
             {
+                Store($"place:{placeId}", null);
                 return null;
             }
 
-            return await FetchByUniverseAsync(universeId.Value, cancellationToken, placeId, cancellationToken);
+            return await FetchByUniverseAsync(universeId.Value, placeId);
         }
         catch
         {
@@ -82,11 +97,7 @@ public sealed class RobloxGameInfoClient(IHttpClientFactory httpClientFactory, I
         }
     }
 
-    private async Task<RobloxGameInfo?> FetchByUniverseAsync(
-        long universeId,
-        CancellationToken cancellationToken,
-        long? knownPlaceId = null,
-        CancellationToken? outerCancellationToken = null)
+    private async Task<RobloxGameInfo?> FetchByUniverseAsync(long universeId, long? knownPlaceId = null)
     {
         try
         {
@@ -94,8 +105,7 @@ public sealed class RobloxGameInfoClient(IHttpClientFactory httpClientFactory, I
 
             // 2) Game name + root place from the games API.
             var gamesBatch = await client.GetFromJsonAsync<GamesBatch>(
-                $"https://games.roblox.com/v1/games?universeIds={universeId}",
-                cancellationToken);
+                $"https://games.roblox.com/v1/games?universeIds={universeId}");
             var game = gamesBatch?.Data?.Count > 0 ? gamesBatch.Data[0] : null;
             var name = game?.Name;
             if (string.IsNullOrWhiteSpace(name))
@@ -108,8 +118,7 @@ public sealed class RobloxGameInfoClient(IHttpClientFactory httpClientFactory, I
             try
             {
                 var icons = await client.GetFromJsonAsync<GameIconBatch>(
-                    $"https://thumbnails.roblox.com/v1/games/icons?universeIds={universeId}&size=150x150&format=Png&isCircular=false",
-                    cancellationToken);
+                    $"https://thumbnails.roblox.com/v1/games/icons?universeIds={universeId}&size=150x150&format=Png&isCircular=false");
                 iconUrl = icons?.Data?.Count > 0 ? icons.Data[0].ImageUrl : null;
             }
             catch
@@ -117,7 +126,13 @@ public sealed class RobloxGameInfoClient(IHttpClientFactory httpClientFactory, I
                 // Icon is optional; the name alone still renders a useful row.
             }
 
-            return new RobloxGameInfo(name, game?.RootPlaceId ?? knownPlaceId, iconUrl, null, DateTime.UtcNow);
+            var info = new RobloxGameInfo(name, game?.RootPlaceId ?? knownPlaceId, iconUrl, null, DateTime.UtcNow);
+            if (knownPlaceId is not null)
+            {
+                Store($"place:{knownPlaceId.Value}", info);
+            }
+            Store($"universe:{universeId}", info);
+            return info;
         }
         catch
         {

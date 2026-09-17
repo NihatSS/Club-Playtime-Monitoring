@@ -4,6 +4,7 @@ using ClubPlaytime.Api.Models;
 using ClubPlaytime.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClubPlaytime.Api.Controllers;
@@ -33,9 +34,15 @@ public sealed class RewardsController(ClubPlaytimeDbContext dbContext, IPlayerSt
     /// calendar month — the prize plus the current top 10.
     /// </summary>
     [HttpGet("monthly")]
+    [OutputCache(PolicyName = "PublicShort")]
     public async Task<ActionResult<MonthlyRewardDto>> GetMonthlyReward(CancellationToken cancellationToken)
     {
-        var setting = await GetSettingAsync(cancellationToken);
+        // Read-only fast path: never create the singleton row here. The old code
+        // wrote on every public read AND raced — two concurrent first loads both
+        // inserted the Id=1 row and one 500ed on the unique constraint.
+        var setting = await dbContext.MonthlyRewardSetting
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == 1, cancellationToken);
         var utcNow = DateTime.UtcNow;
 
         var topPlayers = (await playerStatsService.GetLeaderboardAsync("monthly", cancellationToken))
@@ -44,9 +51,9 @@ public sealed class RewardsController(ClubPlaytimeDbContext dbContext, IPlayerSt
 
         return Ok(new MonthlyRewardDto
         {
-            Prize = setting.Prize,
-            UpdatedAt = setting.UpdatedAt,
-            UpdatedBy = setting.UpdatedBy,
+            Prize = setting?.Prize ?? string.Empty,
+            UpdatedAt = setting?.UpdatedAt ?? utcNow,
+            UpdatedBy = setting?.UpdatedBy,
             Month = utcNow.Month,
             Year = utcNow.Year,
             TopPlayers = topPlayers
@@ -63,26 +70,34 @@ public sealed class RewardsController(ClubPlaytimeDbContext dbContext, IPlayerSt
         {
             return BadRequest(new { message = "Prize is required." });
         }
+        if (prize.Length > 300)
+        {
+            prize = prize[..300];
+        }
 
-        var setting = await GetSettingAsync(cancellationToken);
-        setting.Prize = prize.Length > 300 ? prize[..300] : prize;
-        setting.UpdatedAt = DateTime.UtcNow;
-        setting.UpdatedBy = User.Identity?.Name;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return NoContent();
-    }
-
-    private async Task<MonthlyRewardSetting> GetSettingAsync(CancellationToken cancellationToken)
-    {
         var setting = await dbContext.MonthlyRewardSetting.FirstOrDefaultAsync(r => r.Id == 1, cancellationToken);
         if (setting is null)
         {
-            // Singleton row — create on first access so admins can edit it immediately.
-            setting = new MonthlyRewardSetting { Id = 1, Prize = string.Empty, UpdatedAt = DateTime.UtcNow };
+            // Singleton row — create on first admin save. If two admins save at the
+            // same instant on a fresh DB, the loser retries as an update instead of 500ing.
+            setting = new MonthlyRewardSetting { Id = 1, Prize = prize, UpdatedAt = DateTime.UtcNow, UpdatedBy = User.Identity?.Name };
             dbContext.MonthlyRewardSetting.Add(setting);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return NoContent();
+            }
+            catch (DbUpdateException)
+            {
+                dbContext.Entry(setting).State = EntityState.Detached;
+                setting = await dbContext.MonthlyRewardSetting.FirstAsync(r => r.Id == 1, cancellationToken);
+            }
         }
-        return setting;
+
+        setting.Prize = prize;
+        setting.UpdatedAt = DateTime.UtcNow;
+        setting.UpdatedBy = User.Identity?.Name;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return NoContent();
     }
 }

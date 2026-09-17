@@ -178,7 +178,15 @@ function NotificationBell({ isAdmin }) {
   const [seenAt, setSeenAt] = useState(() => Number(localStorage.getItem(NOTIFICATIONS_SEEN_KEY)) || 0);
   const ref = useRef(null);
 
+  // Fetch notification sources only when the bell is first used, then refresh
+  // only when re-opened after 30s. The old code refetched on EVERY open/close
+  // toggle (open was in the dep array), doubling requests per click and firing
+  // on page load for users who never open the bell.
+  const fetchedAtRef = useRef(0);
   useEffect(() => {
+    if (!open) return;
+    if (Date.now() - fetchedAtRef.current < 30000) return;
+    fetchedAtRef.current = Date.now();
     let cancelled = false;
     Promise.all([api.tournaments(), api.announcements(12).catch(() => [])])
       .then(([tournaments, announcements]) => {

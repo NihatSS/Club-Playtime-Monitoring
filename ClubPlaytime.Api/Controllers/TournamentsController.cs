@@ -4,6 +4,7 @@ using ClubPlaytime.Api.Models;
 using ClubPlaytime.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClubPlaytime.Api.Controllers;
@@ -24,6 +25,7 @@ public sealed class TournamentsController(
     /// <summary>All tournaments visible to everyone (history included).</summary>
     [HttpGet]
     [AllowAnonymous]
+    [OutputCache(PolicyName = "PublicShort")]
     public async Task<ActionResult<List<TournamentListItemDto>>> GetTournaments()
     {
         var tournaments = await dbContext.Tournaments

@@ -214,7 +214,10 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   const [bannerEditing, setBannerEditing] = useState(false);
   const [bannerBusy, setBannerBusy] = useState(false);
   const [bannerUploading, setBannerUploading] = useState(false);
-  const [bannerFileVersion, setBannerFileVersion] = useState(null);
+  // Live preview: the resized image is shown on the hero IMMEDIATELY (data URL),
+  // before anything is uploaded. Save uploads it; Cancel discards it.
+  const [bannerPreview, setBannerPreview] = useState(null); // data URL shown on the hero
+  const [bannerPendingFile, setBannerPendingFile] = useState(null); // pending File object awaiting Save
   const bannerFileRef = useRef(null);
 
   const loadProfile = useCallback(async () => {
@@ -223,7 +226,6 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     try {
       const data = await api.myProfile();
       setProfile(data);
-      setBannerFileVersion(data.bannerImageVersion ?? null);
       setDiscordInput(data.discordUserId ?? '');
       setDiscordEditing(false);
       if (data.player?.id) {
@@ -308,6 +310,11 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     }
   }
 
+  function discardBannerPreview() {
+    setBannerPreview(null);
+    setBannerPendingFile(null);
+  }
+
   async function handleBannerReset() {
     setBannerBusy(true);
     setError('');
@@ -316,6 +323,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
       const result = await api.updateBanner('');
       setNotice(result.message ?? 'Banner reset to default.');
       setBannerEditing(false);
+      discardBannerPreview();
       await loadProfile();
     } catch (err) {
       setError(err.message);
@@ -390,6 +398,8 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     });
   }
 
+  // Pick an image → resize → show it on the hero as a LIVE PREVIEW.
+  // Nothing is uploaded until the user presses Save.
   async function handleBannerFile(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -405,16 +415,35 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     setBannerUploading(true);
     try {
       const dataUrl = await resizeImageFile(file);
-      const blob = await (await fetch(dataUrl)).blob();
-      const result = await api.uploadBanner(new File([blob], 'banner.jpg', { type: 'image/jpeg' }));
-      setNotice(result.message ?? 'Banner image uploaded.');
-      setBannerEditing(false);
-      setBannerFileVersion(result.bannerImageVersion ?? String(Date.now()));
-      await loadProfile();
+      // Immediate live preview — same data the server would store, so the
+      // preview's crop/size match the saved banner exactly.
+      setBannerPreview(dataUrl);
+      setBannerPendingFile(await (await fetch(dataUrl)).blob());
     } catch (err) {
       setError(err.message);
     } finally {
       setBannerUploading(false);
+    }
+  }
+
+  // Save: upload the pending preview file and refresh.
+  async function handleBannerSave() {
+    if (!bannerPendingFile) return;
+    setBannerBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await api.uploadBanner(
+        new File([bannerPendingFile], 'banner.jpg', { type: 'image/jpeg' })
+      );
+      setNotice(result.message ?? 'Banner image uploaded.');
+      setBannerEditing(false);
+      discardBannerPreview();
+      await loadProfile();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBannerBusy(false);
     }
   }
 
@@ -498,10 +527,10 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   const displayAvatar = player?.avatarUrl ?? avatarUrl;
   const displayRobloxId = player?.robloxUserId ?? profile.robloxUserId;
   const weekDonutTotal = weekDonut.reduce((s, d) => s + d.value, 0);
-  const bannerImageUrl = profile.bannerImageVersion
+  const bannerImageUrl = profile.bannerImageVersion && !bannerPreview
     ? `/api/profile/banner-image/${profile.id}?v=${profile.bannerImageVersion}`
     : null;
-  const heroImage = bannerImageUrl ?? profile.bannerUrl;
+  const heroImage = bannerPreview ?? bannerImageUrl ?? profile.bannerUrl;
 
   return (
     <div className="min-h-screen bg-[#050510] text-zinc-50">
@@ -543,17 +572,22 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
           <div className="space-y-5">
             {/* ─── HERO BANNER ─── */}
             <div className="relative overflow-hidden rounded-xl border border-line shadow-glow">
-              {/* Custom banner image (uploaded file or legacy URL, if set), otherwise the default gradient */}
+              {/* Custom banner image (live preview, uploaded file or legacy URL), otherwise the default gradient */}
               {heroImage ? (
                 <>
                   <div className="absolute inset-0 bg-gradient-to-br from-[#221a4d] via-[#1b1440] to-[#0a0a1a]" />
                   <img
                     src={heroImage}
                     alt=""
-                    className="absolute inset-0 h-full w-full object-cover"
+                    className={`absolute inset-0 h-full w-full object-cover ${bannerPreview ? 'animate-pop' : ''}`}
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a1a]/80 via-transparent to-[#0a0a1a]/30" />
+                  {/* Readability stack: bottom scrim under the identity block + a
+                      global dim so bright images don't blow out the text. Kept
+                      subtle so dark banners stay rich instead of going flat. */}
+                  <div className="absolute inset-0 bg-black/25" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a1a]/95 via-[#0a0a1a]/45 to-[#0a0a1a]/45" />
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_120%,rgba(0,229,255,0.10),transparent_60%)]" />
                 </>
               ) : (
                 <>
@@ -566,6 +600,9 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
               {bannerEditing ? (
                 <div className="absolute right-3 top-3 z-10 w-72 rounded-lg border border-neon-cyan/20 bg-[#0d0d1a]/95 p-3 shadow-2xl backdrop-blur">
                   <div className="text-xs font-semibold text-zinc-200">Banner image</div>
+                  {bannerPreview && (
+                    <div className="mt-1 text-[11px] text-emerald-300">Preview updated — save to apply.</div>
+                  )}
                   {/* Pick an image from this device */}
                   <input
                     ref={bannerFileRef}
@@ -581,27 +618,51 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                     className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-neon-cyan/40 bg-neon-cyan/10 px-2.5 py-2 text-xs font-semibold text-neon-cyan transition hover:bg-neon-cyan/20 disabled:opacity-50"
                   >
                     <Upload className="h-3.5 w-3.5" />
-                    {bannerUploading ? 'Uploading…' : 'Upload from your PC'}
+                    {bannerUploading ? 'Preparing…' : 'Choose image from your PC'}
                   </button>
                   <div className="mt-2 flex items-center gap-1.5">
-                    {(profile.bannerUrl || profile.bannerImageVersion) && (
-                      <button
-                        type="button"
-                        onClick={handleBannerReset}
-                        disabled={bannerBusy}
-                        className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100 disabled:opacity-50"
-                      >
-                        <RotateCcw className="h-3 w-3" />
-                        Reset
-                      </button>
+                    {bannerPendingFile ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleBannerSave}
+                          disabled={bannerBusy || bannerUploading}
+                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-neon-cyan px-2.5 py-1.5 text-[11px] font-bold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-50"
+                        >
+                          <Save className="h-3 w-3" />
+                          {bannerBusy ? 'Saving…' : 'Save banner'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={discardBannerPreview}
+                          disabled={bannerBusy || bannerUploading}
+                          className="rounded-md border border-zinc-700 px-2.5 py-1.5 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100 disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {(profile.bannerUrl || profile.bannerImageVersion) && (
+                          <button
+                            type="button"
+                            onClick={handleBannerReset}
+                            disabled={bannerBusy}
+                            className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100 disabled:opacity-50"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            Reset
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { setBannerEditing(false); discardBannerPreview(); }}
+                          className="ml-auto text-[11px] text-zinc-500 transition hover:text-zinc-300"
+                        >
+                          Cancel
+                        </button>
+                      </>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setBannerEditing(false)}
-                      className="ml-auto text-[11px] text-zinc-500 transition hover:text-zinc-300"
-                    >
-                      Cancel
-                    </button>
                   </div>
                 </div>
               ) : (
@@ -619,32 +680,36 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
               <div className="relative flex flex-wrap items-center gap-5 p-6">
                 <div className="relative shrink-0">
                   {displayAvatar ? (
-                    <img src={displayAvatar} alt="" className="h-20 w-20 rounded-2xl border-2 border-neon-cyan/30 object-cover" />
+                    <img
+                      src={displayAvatar}
+                      alt=""
+                      className="h-20 w-20 rounded-2xl border-2 border-neon-cyan/30 object-cover shadow-[0_2px_12px_rgba(0,0,0,0.65)]"
+                    />
                   ) : (
-                    <div className="grid h-20 w-20 place-items-center rounded-2xl border-2 border-neon-cyan/30 bg-panelSoft text-2xl font-bold text-neon-cyan/80">
+                    <div className="grid h-20 w-20 place-items-center rounded-2xl border-2 border-neon-cyan/30 bg-panelSoft text-2xl font-bold text-neon-cyan/80 shadow-[0_2px_12px_rgba(0,0,0,0.65)]">
                       {displayName.slice(0, 1).toUpperCase()}
                     </div>
                   )}
                   {player && <PresenceDot details={details} />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-2xl font-bold text-zinc-50">{displayName}</div>
+                  <div className="truncate text-2xl font-bold text-zinc-50 [text-shadow:0_1px_3px_rgba(0,0,0,0.8)]">{displayName}</div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-md bg-neon-cyan/15 px-2 py-0.5 text-[11px] font-semibold text-neon-cyan">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-neon-cyan/15 px-2 py-0.5 text-[11px] font-semibold text-neon-cyan ring-1 ring-inset ring-neon-cyan/30">
                       {profile.role === 'Admin' ? 'Admin' : 'Member'}
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-0.5 text-[11px] font-medium text-zinc-300">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-zinc-950/60 px-2 py-0.5 text-[11px] font-medium text-zinc-200 ring-1 ring-inset ring-white/15 backdrop-blur-sm">
                       <Gamepad2 className="h-3 w-3" />
                       Roblox User
                     </span>
                   </div>
                   {displayRobloxId != null && (
-                    <div className="mt-2 flex items-center gap-1.5 font-mono text-sm text-mist">
+                    <div className="mt-2 flex items-center gap-1.5 font-mono text-sm text-zinc-100 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
                       ID: {displayRobloxId}
                       <CopyButton value={displayRobloxId} title="Copy Roblox ID" />
                     </div>
                   )}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-mist">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
                     <span className="inline-flex items-center gap-1.5">
                       <CalendarDays className="h-3.5 w-3.5" />
                       Joined {longDate(profile.createdAt)}
@@ -659,7 +724,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                 <button
                   type="button"
                   onClick={() => setPwEditing((s) => !s)}
-                  className="inline-flex shrink-0 items-center gap-1.5 self-end rounded-lg border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
+                  className="inline-flex shrink-0 items-center gap-1.5 self-end rounded-lg border border-white/10 bg-zinc-950/60 px-3.5 py-2 text-sm font-medium text-zinc-100 ring-1 ring-inset ring-white/10 backdrop-blur-sm transition hover:bg-zinc-900/80"
                 >
                   <KeyRound className="h-4 w-4" />
                   Change password

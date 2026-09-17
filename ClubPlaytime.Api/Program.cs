@@ -6,14 +6,52 @@ using ClubPlaytime.Api.Options;
 using ClubPlaytime.Api.Repositories;
 using ClubPlaytime.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Primitives;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
-builder.Logging.AddDebug();
+
+// Railway cost control: per-request EF SQL logs and per-outbound-call HttpClient
+// logs are pure CPU/IO burn at ~60s polling + live traffic. Warnings and errors
+// still surface (the real 500 diagnostics), normal chatter does not.
+builder.Logging.SetMinimumLevel(LogLevel.Information);
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+
+// Response compression: JSON payloads (dashboard ~12KB, details ~4KB) shrink to a
+// third over the wire — directly less Railway bandwidth for every page load.
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/problem+json"]);
+});
+
+// Output caching for public GET endpoints: the dashboard is polled by every open
+// browser tab, but its data only changes when the monitor runs. Serving cached
+// responses for a few seconds collapses N concurrent visitors into ~1 DB hit.
+builder.Services.AddOutputCache(options =>
+{
+    // No base policy: endpoints that don't opt into a named policy are simply
+    // not cached (a base policy with Expire would either cache everything or,
+    // with TimeSpan.Zero, throw for every unmatched request).
+    options.AddPolicy("PublicShort", b => b
+        .Expire(TimeSpan.FromSeconds(5))
+        .SetVaryByRouteValue("*", "action")
+        .SetVaryByQuery("*"));
+    options.AddPolicy("Announcements", b => b
+        .Expire(TimeSpan.FromSeconds(15))
+        .SetVaryByQuery("limit"));
+});
 
 builder.Services.Configure<MonitoringOptions>(
     builder.Configuration.GetSection(MonitoringOptions.SectionName));
@@ -22,6 +60,14 @@ builder.Services.Configure<JwtOptions>(
     builder.Configuration.GetSection(JwtOptions.SectionName));
 
 builder.Services.AddControllers();
+
+// Unhandled exceptions were previously answered by Kestrel's empty 500 with no
+// body and no visible reason on the server. This handler logs the REAL exception
+// server-side and returns a machine-readable 500 ProblemDetails (or maps expected
+// exception types to proper status codes) so failures are diagnosable instead of
+// a wall of identical 500s.
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -111,7 +157,10 @@ builder.Services.AddDbContext<ClubPlaytimeDbContext>(options =>
             pgConn = $"Host={host};Port={port};Database={database};Username={username};Password={password};SSL Mode=require;Trust Server Certificate=true";
         }
 
-        options.UseNpgsql(pgConn);
+        // Transient failures against hosted Postgres (Neon idle wake-ups, Railway
+        // maintenance) previously surfaced as random 500s. Retry a few times with
+        // backoff before failing, and pool connections to cut handshake latency.
+        options.UseNpgsql(pgConn, npgsql => npgsql.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(3), Array.Empty<string>()));
     }
     else if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
     {
@@ -121,6 +170,10 @@ builder.Services.AddDbContext<ClubPlaytimeDbContext>(options =>
     {
         var connString = builder.Configuration.GetConnectionString("DefaultConnection")
                          ?? "Data Source=club-playtime.db";
+
+        // SQLite is opened read-mostly and polled constantly; WAL allows readers
+        // and writers to overlap instead of serializing on the file lock.
+        connString = connString + ";Mode=ReadWriteCreate;Cache=Shared";
 
         // Pin relative SQLite paths to the content root so every launch opens the SAME
         // database file regardless of the working directory the process was started
@@ -163,7 +216,7 @@ builder.Services.AddHttpClient<IRobloxProfileClient, RobloxProfileClient>(client
 });
 builder.Services.AddHttpClient<IRobloxAvatarClient, RobloxAvatarClient>();
 builder.Services.AddHttpClient<IDiscordNotifier, DiscordNotifier>();
-builder.Services.AddHttpClient("RobloxGameInfo");
+builder.Services.AddHttpClient("RobloxGameInfo", client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSingleton<IRobloxGameInfoClient, RobloxGameInfoClient>();
 builder.Services.AddSingleton<IPlayerMonitorRunner, PlayerMonitorRunner>();
 builder.Services.AddHostedService<PlayerMonitoringHostedService>();
@@ -179,7 +232,23 @@ using (var scope = app.Services.CreateScope())
         // PostgreSQL: create a new schema from the model, then apply the small,
         // additive compatibility upgrades below for databases that already existed.
         // EnsureCreated intentionally does not update an existing database.
-        dbContext.Database.EnsureCreated();
+        // Hosted Postgres (Neon) suspends idle databases; a cold wake-up can make
+        // the very first startup command fail — retry before giving up so a cold
+        // start doesn't crash-loop the container.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                dbContext.Database.EnsureCreated();
+                break;
+            }
+            catch (Exception ex) when (attempt < 3)
+            {
+                app.Logger.LogWarning(ex, "Database EnsureCreated attempt {Attempt} failed; retrying…", attempt);
+                await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
+            }
+        }
+        ApplyPostgresIndexes(dbContext);
         ApplyPostgresAccountLinkSchema(dbContext);
         ApplyPostgresTournamentSchema(dbContext);
         ApplyPostgresAnnouncementSchema(dbContext);
@@ -190,6 +259,7 @@ using (var scope = app.Services.CreateScope())
     {
         // SQLite / SqlServer: apply existing migrations
         dbContext.Database.Migrate();
+        ApplySqliteIndexes(dbContext);
     }
 
     // Seed matiaspro admin user if it doesn't exist yet
@@ -538,6 +608,37 @@ static void ApplyPostgresProfilePresenceSchema(ClubPlaytimeDbContext dbContext)
         """);
 }
 
+// Missing hot-path indexes for existing PostgreSQL deployments. Every dashboard
+// load, leaderboard and rank computation filters DailyPlaytime by Date; join-
+// request and Discord lookups filtered by DiscordUserId. Without these the
+// tables are scanned on every request.
+static void ApplyPostgresIndexes(ClubPlaytimeDbContext dbContext)
+{
+    dbContext.Database.ExecuteSqlRaw("""
+        CREATE INDEX IF NOT EXISTS "IX_DailyPlaytime_Date" ON "DailyPlaytime" ("Date");
+        CREATE INDEX IF NOT EXISTS "IX_Players_DiscordUserId" ON "Players" ("DiscordUserId");
+        CREATE INDEX IF NOT EXISTS "IX_Users_DiscordUserId" ON "Users" ("DiscordUserId");
+        CREATE INDEX IF NOT EXISTS "IX_VerificationCodes_ClaimToken" ON "VerificationCodes" ("ClaimToken");
+        CREATE INDEX IF NOT EXISTS "IX_JoinRequests_UserId_CreatedAt" ON "JoinRequests" ("UserId", "CreatedAt");
+        CREATE INDEX IF NOT EXISTS "IX_TournamentMatches_TournamentId_Round" ON "TournamentMatches" ("TournamentId", "Round");
+        CREATE INDEX IF NOT EXISTS "IX_Players_TotalPlaySeconds" ON "Players" ("TotalPlaySeconds");
+        """);
+}
+
+// Same additive index set for SQLite/SqlServer deployments that applied the
+// checked-in migrations before these indexes existed. SQLite supports
+// CREATE INDEX IF NOT EXISTS natively, so no existence probe is needed.
+static void ApplySqliteIndexes(ClubPlaytimeDbContext dbContext)
+{
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_DailyPlaytime_Date\" ON \"DailyPlaytime\" (\"Date\")");
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_Players_DiscordUserId\" ON \"Players\" (\"DiscordUserId\")");
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_Users_DiscordUserId\" ON \"Users\" (\"DiscordUserId\")");
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_VerificationCodes_ClaimToken\" ON \"VerificationCodes\" (\"ClaimToken\")");
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_JoinRequests_UserId_CreatedAt\" ON \"JoinRequests\" (\"UserId\", \"CreatedAt\")");
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_TournamentMatches_TournamentId_Round\" ON \"TournamentMatches\" (\"TournamentId\", \"Round\")");
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_Players_TotalPlaySeconds\" ON \"Players\" (\"TotalPlaySeconds\")");
+}
+
 // Announcements table for existing PostgreSQL deployments (same additive
 // pattern as the tournament schema above).
 static void ApplyPostgresAnnouncementSchema(ClubPlaytimeDbContext dbContext)
@@ -566,17 +667,55 @@ static void ApplyPostgresAnnouncementSchema(ClubPlaytimeDbContext dbContext)
         """);
 }
 
+app.UseExceptionHandler();
 app.UseHttpsRedirection();
+app.UseResponseCompression();
 app.UseDefaultFiles(); // Serve index.html by default
-app.UseStaticFiles(); // Serve static files from wwwroot
+
+// Hash-busted static assets (vite emits content-hashed filenames) are immutable
+// for a year — browsers stop re-downloading the whole app on every visit.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var path = ctx.Context.Request.Path;
+        if (path.StartsWithSegments("/assets"))
+        {
+            ctx.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
+        }
+        else if (path.HasValue && (path.Value.EndsWith(".html") || path.Value.EndsWith("/")))
+        {
+            ctx.Context.Response.Headers.CacheControl = "no-cache";
+        }
+    }
+});
+
 app.UseCors("ReactClient");
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Banner images are versioned by URL (?v=changes on every upload), so they are
+// safely cacheable — repeat profile views stop re-downloading them entirely.
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api/profile/banner-image"))
+        {
+            context.Response.Headers.CacheControl = "public,max-age=604800";
+        }
+        return Task.CompletedTask;
+    });
+    await next();
+});
+app.UseOutputCache();
 
 // Website-presence heartbeat: for authenticated requests from users with a
 // linked tracker player, stamp LastSeenOnSite on the user and player rows at
 // most once per 4 minutes. Lets the client show "on the website" vs "in game"
 // vs "offline" without any extra requests or infrastructure.
+// One set-based UPDATE per 4-minute window (previously two tracked-entity loads
+// plus a full save per authenticated request, adding writes and latency).
 app.Use(async (context, next) =>
 {
     if (context.User.Identity?.IsAuthenticated == true)
@@ -584,23 +723,21 @@ app.Use(async (context, next) =>
         try
         {
             var db = context.RequestServices.GetRequiredService<ClubPlaytime.Api.Data.ClubPlaytimeDbContext>();
-            var cutoff = DateTime.UtcNow.AddMinutes(-4);
+            var now = DateTime.UtcNow;
+            var cutoff = now.AddMinutes(-4);
             var identityName = context.User.Identity!.Name;
-            var user = await db.Users
-                .FirstOrDefaultAsync(u => u.Username == identityName && (u.LastSeenOnSite == null || u.LastSeenOnSite < cutoff));
-            if (user is not null)
+
+            // Single round-trip: bump both rows only when the window has elapsed.
+            var updated = await db.Users
+                .Where(u => u.Username == identityName && (u.LastSeenOnSite == null || u.LastSeenOnSite < cutoff))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(u => u.LastSeenOnSite, now), cancellationToken: context.RequestAborted);
+
+            if (updated > 0)
             {
-                var now = DateTime.UtcNow;
-                user.LastSeenOnSite = now;
-                if (user.PlayerId is not null)
-                {
-                    var player = await db.Players.FirstOrDefaultAsync(p => p.Id == user.PlayerId.Value);
-                    if (player is not null && (player.LastSeenOnSite == null || player.LastSeenOnSite < cutoff))
-                    {
-                        player.LastSeenOnSite = now;
-                    }
-                }
-                await db.SaveChangesAsync();
+                await db.Players
+                    .Where(p => p.Id == db.Users.Where(u => u.Username == identityName).Select(u => u.PlayerId).FirstOrDefault())
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.LastSeenOnSite, now), cancellationToken: context.RequestAborted);
             }
         }
         catch
@@ -612,6 +749,20 @@ app.Use(async (context, next) =>
     await next();
 });
 
+// Client-aborted requests (user navigates away mid-fetch) are normal noise:
+// close the connection instead of letting them surface as errors.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (OperationCanceledException)
+    {
+        context.Abort();
+    }
+});
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -621,3 +772,50 @@ if (app.Environment.IsDevelopment())
 app.MapControllers();
 
 app.Run();
+
+// ─── Global exception handler ────────────────────────────────────────────────
+// Logs the real exception server-side and returns a proper ProblemDetails 500
+// instead of an empty Kestrel 500, so production "500 everywhere" incidents are
+// diagnosable from the browser console AND the server log.
+internal sealed class GlobalExceptionHandler(ILogger<Program> logger) : IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
+    {
+        var (status, title) = exception switch
+        {
+            OperationCanceledException => (StatusCodes.Status499ClientClosedRequest, "Request cancelled"),
+            Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "The record was modified by someone else. Reload and try again."),
+            UnauthorizedAccessException => (StatusCodes.Status403Forbidden, "Forbidden"),
+            _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
+        };
+
+        if (status == StatusCodes.Status500InternalServerError)
+        {
+            logger.LogError(exception,
+                "Unhandled exception for {Method} {Path} (trace {TraceId})",
+                httpContext.Request.Method, httpContext.Request.Path, httpContext.TraceIdentifier);
+        }
+        else if (status != StatusCodes.Status499ClientClosedRequest)
+        {
+            logger.LogWarning(exception, "{Status} for {Method} {Path}: {Message}",
+                status, httpContext.Request.Method, httpContext.Request.Path, exception.Message);
+        }
+
+        if (status == StatusCodes.Status499ClientClosedRequest)
+        {
+            return true; // client is gone; nothing to write
+        }
+
+        httpContext.Response.StatusCode = status;
+        await httpContext.Response.WriteAsJsonAsync(
+            new
+            {
+                type = "https://tools.ietf.org/html/rfc9110#section-15.6.1",
+                title,
+                status,
+                traceId = httpContext.TraceIdentifier
+            },
+            cancellationToken);
+        return true;
+    }
+}

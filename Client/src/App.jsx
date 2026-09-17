@@ -170,7 +170,9 @@ function JoinRequestsDropdown({ onApproved }) {
 
   useEffect(() => {
     loadRequests();
-    const timer = window.setInterval(() => loadRequests(true), 15000);
+    // Poll every 30s, and not at all while the tab is hidden — hidden-tab
+    // polling was burning Railway request minutes for zero visible benefit.
+    const timer = window.setInterval(() => { if (!document.hidden) loadRequests(true); }, 30000);
     return () => window.clearInterval(timer);
   }, [loadRequests]);
 
@@ -1020,14 +1022,32 @@ export default function App() {
 
   useEffect(() => {
     loadDashboard();
-    const timer = window.setInterval(() => { loadDashboard(true); if (selectedId) loadDetails(selectedId); }, 15000);
-    return () => window.clearInterval(timer);
+    // 30s poll, skipped entirely while the tab is hidden. The request layer's
+    // 30s micro-cache also dedupes this with any mount happening in parallel.
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      loadDashboard(true);
+      if (selectedId) loadDetails(selectedId);
+    }, 30000);
+    // Refetch once when the user comes back so the page isn't stale.
+    function onVisible() {
+      if (!document.hidden) loadDashboard(true);
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [loadDashboard, loadDetails, selectedId]);
 
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
 
   const livePlayers = useMemo(() => {
     if (!lastRefreshAt || players.length === 0) return players;
+    // Nobody playing → nothing can advance → return the SAME array so all
+    // downstream memos and the card list bail out instead of re-rendering
+    // the entire dashboard every second.
+    if (!players.some((p) => p.currentStatus?.startsWith('Playing'))) return players;
     const elapsed = Math.floor((Date.now() - lastRefreshAt) / 1000);
     if (elapsed <= 0) return players;
     return players.map((p) => {

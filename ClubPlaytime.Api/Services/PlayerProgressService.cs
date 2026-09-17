@@ -60,10 +60,12 @@ public sealed class PlayerProgressService(
             .ToListAsync(cancellationToken);
 
         var streak = await dbContext.PlayerStreaks.FirstOrDefaultAsync(s => s.PlayerId == playerId, cancellationToken);
+        var isNewRow = false;
         if (streak is null)
         {
             streak = new PlayerStreak { PlayerId = playerId };
             dbContext.PlayerStreaks.Add(streak);
+            isNewRow = true;
         }
 
         if (dates.Count == 0)
@@ -74,7 +76,10 @@ public sealed class PlayerProgressService(
             streak.DaysPlayed = 0;
             streak.LastActiveDate = null;
             streak.UpdatedAt = DateTime.UtcNow;
-            await dbContext.SaveChangesAsync(cancellationToken);
+            if (isNewRow)
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
             return streak;
         }
 
@@ -133,7 +138,19 @@ public sealed class PlayerProgressService(
         streak.DaysPlayed = ordered.Count;
         streak.LastActiveDate = last;
         streak.UpdatedAt = DateTime.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
+
+        // Save only when something actually changed. Streaks are recomputed on
+        // every stats/achievements GET; writing unconditionally turned every
+        // public read into a DB roundtrip (rows updated on Railway = real cost).
+        var dirty = previousStreak != streak.CurrentStreak
+            || previousLongest != streak.LongestStreak
+            || streak.DaysPlayed != ordered.Count
+            || streak.LastActiveDate != last
+            || isNewRow;
+        if (dirty)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
 
         // Streak milestone announcements: fire once when the live current streak
         // crosses a milestone. Bests reached through history (recompute, import)

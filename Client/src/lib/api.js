@@ -51,6 +51,56 @@ export function setOnAuthExpired(callback) {
   onAuthExpired = callback;
 }
 
+// ─── Micro request cache for public GETs ─────────────────────────────────────
+// Public dashboard/leaderboard/stats data changes at most once per monitor scan
+// (60s). Repeated mounts of the same page within the TTL are served from memory
+// with zero network cost, and identical in-flight requests share one promise
+// (React 18 StrictMode double-mounts were sending every request twice).
+const GET_CACHE_TTL_MS = 30_000;
+const getCache = new Map(); // path -> { data, at }
+const inflightGets = new Map(); // path -> Promise
+
+function invalidateCachePrefix(pathPrefix) {
+  for (const key of getCache.keys()) {
+    if (key === pathPrefix || key.startsWith(pathPrefix)) {
+      getCache.delete(key);
+    }
+  }
+}
+
+async function cachedGet(path) {
+  const hit = getCache.get(path);
+  const now = Date.now();
+  if (hit && now - hit.at < GET_CACHE_TTL_MS) {
+    return hit.data;
+  }
+
+  const pending = inflightGets.get(path);
+  if (pending) {
+    return pending;
+  }
+
+  const promise = baseRequest(path, { method: 'GET' })
+    .then((data) => {
+      getCache.set(path, { data, at: Date.now() });
+      return data;
+    })
+    .finally(() => {
+      inflightGets.delete(path);
+    });
+  inflightGets.set(path, promise);
+  return promise;
+}
+
+/** Force the next fetch of a cached path (called after mutations). */
+function bustCache(path) {
+  if (path) {
+    invalidateCachePrefix(path);
+  } else {
+    getCache.clear();
+  }
+}
+
 async function request(path, options = {}) {
   const token = getToken();
   const headers = {
@@ -107,6 +157,27 @@ async function request(path, options = {}) {
 
   return response.json();
 }
+
+// Wrap request so GETs get dedupe+cache and mutations automatically bust the
+// cache for the same resource prefix (e.g. POST /api/players/3/... busts /api/players).
+const baseRequest = request;
+request = function wrappedRequest(path, options = {}) {
+  const method = (options.method ?? 'GET').toUpperCase();
+  if (method === 'GET' && options.cache !== false) {
+    return cachedGet(path);
+  }
+  const result = baseRequest(path, options);
+  if (method !== 'GET') {
+    // Bust aggressively but cheaply: the first two path segments (e.g. /api/players)
+    // plus the exact resource (/api/players/3) so lists and details both refresh.
+    const segments = path.split('?')[0].split('/').filter(Boolean);
+    bustCache('/' + segments.slice(0, 2).join('/'));
+    if (segments.length > 2) {
+      bustCache('/' + segments.slice(0, 3).join('/'));
+    }
+  }
+  return result;
+};
 
 export const api = {
   // Auth
