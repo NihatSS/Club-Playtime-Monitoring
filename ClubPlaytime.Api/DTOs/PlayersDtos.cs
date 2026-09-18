@@ -42,6 +42,8 @@ public sealed class PlayerDto
 
     public string? CurrentGame { get; set; }
 
+    /// <summary>Last time the player was seen in the target game: the live accrual cursor while a
+    /// session is in progress, otherwise the newest Started/Stopped event on record. Null = never.</summary>
     public DateTime? LastSeenPlaying { get; set; }
 
     public long TodayPlaySeconds { get; set; }
@@ -94,6 +96,8 @@ public sealed class DashboardPlayerDto
 
     public string? CurrentGame { get; set; }
 
+    /// <summary>Last time the player was seen in the target game: the live accrual cursor while a
+    /// session is in progress, otherwise the newest Started/Stopped event on record. Null = never.</summary>
     public DateTime? LastSeenPlaying { get; set; }
 
     public long TodayPlaySeconds { get; set; }
@@ -178,6 +182,8 @@ public sealed class PlayerDetailsDto
 
     public string? CurrentGame { get; set; }
 
+    /// <summary>Last time the player was seen in the target game: the live accrual cursor while a
+    /// session is in progress, otherwise the newest Started/Stopped event on record. Null = never.</summary>
     public DateTime? LastSeenPlaying { get; set; }
 
     public long TodayPlaySeconds { get; set; }

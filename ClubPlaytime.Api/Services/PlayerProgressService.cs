@@ -618,36 +618,49 @@ public sealed class PlayerProgressService(
     /// profile). Does not write anything — reads the cached streak row so the
     /// hot dashboard path stays cheap.
     /// </summary>
-    public async Task<PlayerProgressSummaryDto?> GetSummaryAsync(int playerId, CancellationToken cancellationToken = default)
-    {
-        var player = await dbContext.Players
-            .AsNoTracking()
-            .Select(p => new { p.Id, p.TotalPlaySeconds })
-            .FirstOrDefaultAsync(p => p.Id == playerId, cancellationToken);
-        if (player is null)
+    /// <summary>
+    /// Streaks, achievement count and rank for the dashboard's detail panel.
+    /// This surface only READS the stored progress rows, so it must recompute
+    /// them first, exactly like <see cref="GetAchievementsAsync"/> does: progress
+    /// is derived lazily (the monitor only recomputes when playtime changes), so
+    /// without this the panel showed zeros for every player who had not been
+    /// scanned since the progress feature shipped — while the badges page, which
+    /// does recompute, showed the real numbers for the same player.
+    /// </summary>
+    public Task<PlayerProgressSummaryDto?> GetSummaryAsync(int playerId, CancellationToken cancellationToken = default) =>
+        WithPlayerLockAsync<PlayerProgressSummaryDto?>(playerId, async () =>
         {
-            return null;
-        }
+            var player = await dbContext.Players
+                .AsNoTracking()
+                .Select(p => new { p.Id, p.TotalPlaySeconds })
+                .FirstOrDefaultAsync(p => p.Id == playerId, cancellationToken);
+            if (player is null)
+            {
+                return null;
+            }
 
-        var streak = await dbContext.PlayerStreaks.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.PlayerId == playerId, cancellationToken);
-        var unlocked = await dbContext.PlayerAchievements
-            .CountAsync(a => a.PlayerId == playerId, cancellationToken);
+            await UpdateStreakAsync(playerId, cancellationToken);
+            await EvaluateAchievementsAsync(playerId, cancellationToken);
 
-        var betterCount = await dbContext.Players.CountAsync(p => p.TotalPlaySeconds > player.TotalPlaySeconds, cancellationToken);
-        var totalRank = player.TotalPlaySeconds > 0 ? betterCount + 1 : (int?)null;
+            var streak = await dbContext.PlayerStreaks.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.PlayerId == playerId, cancellationToken);
+            var unlocked = await dbContext.PlayerAchievements
+                .CountAsync(a => a.PlayerId == playerId, cancellationToken);
 
-        return new PlayerProgressSummaryDto
-        {
-            CurrentStreak = streak?.CurrentStreak ?? 0,
-            LongestStreak = streak?.LongestStreak ?? 0,
-            DaysPlayed = streak?.DaysPlayed ?? 0,
-            LastActiveDate = streak?.LastActiveDate,
-            AchievementsUnlocked = unlocked,
-            TotalAchievements = AchievementCatalog.All.Count,
-            TotalRank = totalRank
-        };
-    }
+            var betterCount = await dbContext.Players.CountAsync(p => p.TotalPlaySeconds > player.TotalPlaySeconds, cancellationToken);
+            var totalRank = player.TotalPlaySeconds > 0 ? betterCount + 1 : (int?)null;
+
+            return new PlayerProgressSummaryDto
+            {
+                CurrentStreak = streak?.CurrentStreak ?? 0,
+                LongestStreak = streak?.LongestStreak ?? 0,
+                DaysPlayed = streak?.DaysPlayed ?? 0,
+                LastActiveDate = streak?.LastActiveDate,
+                AchievementsUnlocked = unlocked,
+                TotalAchievements = AchievementCatalog.All.Count,
+                TotalRank = totalRank
+            };
+        }, cancellationToken);
 
     private static (string label, int percent) ComputeProgress(
         AchievementDefinition def, long totalPlaySeconds, PlayerStreak? streak)

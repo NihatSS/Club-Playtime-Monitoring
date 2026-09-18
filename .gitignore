@@ -25,5 +25,9 @@ dist/
 .env
 .env.*
 
+# Database dumps: they contain real player data and password hashes
+*.dump
+*.dump.gz
+
 # Windows reserved names
 nul

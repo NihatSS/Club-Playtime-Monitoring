@@ -17,6 +17,7 @@ import {
   KeyRound,
   Link2,
   Medal,
+  Move,
   Pencil,
   Play,
   RotateCcw,
@@ -30,7 +31,9 @@ import {
   Trophy,
   Unlink,
   Upload,
-  User
+  User,
+  X,
+  ZoomIn
 } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { api } from '../lib/api';
@@ -40,6 +43,53 @@ import Header from './Header';
 
 const DISCORD_COPY_HINT =
   "Use Discord's Developer Mode, then right-click your profile and choose Copy User ID.";
+
+// ─── Banner crop geometry ────────────────────────────────────────────────────
+// The hero strip is wider than it is tall and its exact shape depends on the
+// viewport (the layout around it is responsive), so the editor MEASURES the hero
+// it is covering rather than assuming one aspect. Preview and upload are then
+// generated from the same rectangle, so what the user positions is what they get.
+const BANNER_MAX_WIDTH = 1600;
+const BANNER_ASPECT_MIN = 2.5;
+const BANNER_ASPECT_MAX = 8;
+const BANNER_ZOOM_MAX = 4;
+
+/** Largest window of the given aspect that fits inside a width x height image. */
+function baseBannerCrop(width, height, aspect) {
+  const cropW = Math.min(width, aspect * height);
+  return { cropW, cropH: cropW / aspect };
+}
+
+/** Source rectangle, in image pixels, selected by the current crop state. */
+function bannerCropRect(source, crop, aspect) {
+  const { cropW, cropH } = baseBannerCrop(source.width, source.height, aspect);
+  const width = cropW / crop.zoom;
+  const height = cropH / crop.zoom;
+  return {
+    x: Math.max(0, Math.round(crop.x * (source.width - width))),
+    y: Math.max(0, Math.round(crop.y * (source.height - height))),
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height))
+  };
+}
+
+/**
+ * The same crop expressed as CSS background values. Dragging a background with
+ * percentage size/position selects exactly the rectangle bannerCropRect returns,
+ * which is why the on-screen preview cannot drift from the uploaded image.
+ */
+function bannerCropStyle(source, crop, aspect) {
+  const { cropW, cropH } = baseBannerCrop(source.width, source.height, aspect);
+  return {
+    backgroundImage: `url(${source.url})`,
+    backgroundSize: `${((source.width * crop.zoom) / cropW) * 100}% ${((source.height * crop.zoom) / cropH) * 100}%`,
+    backgroundPosition: `${crop.x * 100}% ${crop.y * 100}%`
+  };
+}
+
+function clamp01(value) {
+  return Math.min(1, Math.max(0, value));
+}
 
 /**
  * Website presence: derived from real tracker data.
@@ -220,6 +270,18 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   const [bannerPendingFile, setBannerPendingFile] = useState(null); // pending File object awaiting Save
   const bannerFileRef = useRef(null);
 
+  // Crop editor: the picked file, and where inside it the banner window sits
+  // (x/y run 0..1 across the image, zoom 1 = as much of it as fits the hero).
+  const [bannerSource, setBannerSource] = useState(null); // { url, width, height }
+  const [bannerCrop, setBannerCrop] = useState({ zoom: 1, x: 0.5, y: 0.5 });
+  const [bannerAspect, setBannerAspect] = useState(4);
+  const [bannerCropOpen, setBannerCropOpen] = useState(false);
+  const [bannerApplying, setBannerApplying] = useState(false);
+  const bannerHeroRef = useRef(null);
+  const bannerFrameRef = useRef(null);
+  const bannerDragRef = useRef(null);
+  const bannerSourceUrlRef = useRef(null);
+
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -313,6 +375,97 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   function discardBannerPreview() {
     setBannerPreview(null);
     setBannerPendingFile(null);
+    setBannerCropOpen(false);
+    releaseBannerSource();
+  }
+
+  /** Drop the picked file and the object URL backing it. */
+  function releaseBannerSource() {
+    if (bannerSourceUrlRef.current) {
+      URL.revokeObjectURL(bannerSourceUrlRef.current);
+      bannerSourceUrlRef.current = null;
+    }
+    setBannerSource(null);
+  }
+
+  /**
+   * Open the crop editor sized to the hero it is covering, so the preview shows
+   * the real banner shape instead of a guessed one.
+   */
+  function openBannerCrop() {
+    const hero = bannerHeroRef.current;
+    const measured = hero && hero.clientHeight > 0 ? hero.clientWidth / hero.clientHeight : 4;
+    const aspect = Number.isFinite(measured) && measured > 0
+      ? Math.min(BANNER_ASPECT_MAX, Math.max(BANNER_ASPECT_MIN, measured))
+      : 4;
+    setBannerAspect(aspect);
+    setBannerCrop({ zoom: 1, x: 0.5, y: 0.5 });
+    setBannerCropOpen(true);
+  }
+
+  function cancelBannerCrop() {
+    setBannerCropOpen(false);
+    releaseBannerSource();
+  }
+
+  // Confirm the selected window: render it once at banner size and hand the
+  // result to the existing preview/Save flow. Nothing is uploaded here.
+  async function applyBannerCrop() {
+    if (!bannerSource) return;
+    setBannerApplying(true);
+    setError('');
+    try {
+      const dataUrl = await renderBannerCrop(bannerSource, bannerCrop, bannerAspect);
+      setBannerPreview(dataUrl);
+      setBannerPendingFile(await (await fetch(dataUrl)).blob());
+      setBannerCropOpen(false);
+      releaseBannerSource();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBannerApplying(false);
+    }
+  }
+
+  function onBannerDragStart(event) {
+    const frame = bannerFrameRef.current;
+    if (!frame || !bannerSource) return;
+    const rect = frame.getBoundingClientRect();
+    const { cropW, cropH } = baseBannerCrop(bannerSource.width, bannerSource.height, bannerAspect);
+    const visibleW = cropW / bannerCrop.zoom;
+    const visibleH = cropH / bannerCrop.zoom;
+    bannerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      cropX: bannerCrop.x,
+      cropY: bannerCrop.y,
+      // How far the drag may travel before an image edge reaches the frame.
+      spanX: Math.max(1, rect.width * (bannerSource.width / visibleW - 1)),
+      spanY: Math.max(1, rect.height * (bannerSource.height / visibleH - 1))
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function onBannerDragMove(event) {
+    const drag = bannerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    setBannerCrop((current) => ({
+      ...current,
+      x: clamp01(drag.cropX - dx / drag.spanX),
+      y: clamp01(drag.cropY - dy / drag.spanY)
+    }));
+  }
+
+  function onBannerDragEnd(event) {
+    const drag = bannerDragRef.current;
+    if (!drag) return;
+    bannerDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(drag.pointerId)) {
+      event.currentTarget.releasePointerCapture(drag.pointerId);
+    }
   }
 
   async function handleBannerReset() {
@@ -332,30 +485,46 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     }
   }
 
-  // Resize an image file to at most 1600x400 (banner shape) and re-encode as
-  // JPEG so uploads from the user's PC stay small (<2 MB server limit).
-  function resizeImageFile(file, maxWidth = 1600, maxHeight = 400) {
+  // Load a picked file into something we can crop from. The object URL stays
+  // alive until the crop is applied or discarded so the editor can preview it.
+  function readImageFile(file) {
     return new Promise((resolve, reject) => {
-      const objectUrl = URL.createObjectURL(file);
+      const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        try {
-          // Compute the biggest centered cover-crop that fits the limits.
-          const scale = Math.min(maxWidth / img.width, maxHeight / img.height);
-          const cropW = Math.min(img.width, Math.max(1, Math.round(maxWidth / Math.max(1, scale))));
-          const cropH = Math.min(img.height, Math.max(1, Math.round(maxHeight / Math.max(1, scale))));
-          const srcX = Math.floor((img.width - cropW) / 2);
-          const srcY = Math.floor((img.height - cropH) / 2);
+        if (!img.width || !img.height) {
+          URL.revokeObjectURL(url);
+          reject(new Error('Could not read that image. Try a different file.'));
+          return;
+        }
+        resolve({ url, width: img.width, height: img.height });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Could not read that image. Try a different file.'));
+      };
+      img.src = url;
+    });
+  }
 
-          // Render at native resolution first, then step down for quality.
+  // Render the selected part of an image at banner size and re-encode as JPEG so
+  // uploads from the user's PC stay small (the server rejects anything over 2 MB).
+  function renderBannerCrop(source, crop, aspect) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const rect = bannerCropRect(source, crop, aspect);
+          const outWidth = Math.min(BANNER_MAX_WIDTH, Math.max(320, Math.round(rect.width)));
+          const outHeight = Math.max(1, Math.round(outWidth / aspect));
+
           let canvas = document.createElement('canvas');
           let ctx = canvas.getContext('2d');
-          canvas.width = cropW;
-          canvas.height = cropH;
+          canvas.width = outWidth;
+          canvas.height = outHeight;
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, srcX, srcY, cropW, cropH, 0, 0, cropW, cropH);
+          ctx.drawImage(img, rect.x, rect.y, rect.width, rect.height, 0, 0, outWidth, outHeight);
 
           let quality = 0.85;
           const stepDown = () => {
@@ -390,16 +559,13 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
           reject(err);
         }
       };
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error('Could not read that image. Try a different file.'));
-      };
-      img.src = objectUrl;
+      img.onerror = () => reject(new Error('Could not read that image. Try a different file.'));
+      img.src = source.url;
     });
   }
 
-  // Pick an image → resize → show it on the hero as a LIVE PREVIEW.
-  // Nothing is uploaded until the user presses Save.
+  // Pick an image → open the crop editor → preview on the hero.
+  // Nothing is uploaded until the user presses Save banner.
   async function handleBannerFile(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -414,11 +580,11 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     setNotice('');
     setBannerUploading(true);
     try {
-      const dataUrl = await resizeImageFile(file);
-      // Immediate live preview — same data the server would store, so the
-      // preview's crop/size match the saved banner exactly.
-      setBannerPreview(dataUrl);
-      setBannerPendingFile(await (await fetch(dataUrl)).blob());
+      const source = await readImageFile(file);
+      releaseBannerSource();
+      bannerSourceUrlRef.current = source.url;
+      setBannerSource(source);
+      openBannerCrop();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -571,7 +737,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
           {/* ══════════ LEFT COLUMN ══════════ */}
           <div className="space-y-5">
             {/* ─── HERO BANNER ─── */}
-            <div className="relative overflow-hidden rounded-xl border border-line shadow-glow">
+            <div ref={bannerHeroRef} className="relative overflow-hidden rounded-xl border border-line shadow-glow">
               {/* Custom banner image (live preview, uploaded file or legacy URL), otherwise the default gradient */}
               {heroImage ? (
                 <>
@@ -731,6 +897,86 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                 </button>
               </div>
             </div>
+
+            {/* ─── BANNER CROP EDITOR ─── */}
+            {/* Opens as soon as an image is picked. The frame is the hero's own
+                shape, so positioning here is what the banner will really show. */}
+            {bannerCropOpen && bannerSource && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+                <div className="w-full max-w-2xl rounded-xl border border-neon-cyan/20 bg-[#0d0d1a] p-4 shadow-2xl">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-100">Adjust banner image</div>
+                      <div className="mt-0.5 text-[11px] text-mist">
+                        This frame is exactly what the banner shows. Drag to choose the part you want, zoom in to
+                        fill it with less of the photo.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={cancelBannerCrop}
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-neon-cyan/[0.08] text-mist transition hover:bg-neon-cyan/[0.06] hover:text-zinc-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div
+                    ref={bannerFrameRef}
+                    onPointerDown={onBannerDragStart}
+                    onPointerMove={onBannerDragMove}
+                    onPointerUp={onBannerDragEnd}
+                    onPointerCancel={onBannerDragEnd}
+                    style={{ ...bannerCropStyle(bannerSource, bannerCrop, bannerAspect), aspectRatio: bannerAspect }}
+                    className="mt-3 w-full cursor-grab touch-none select-none overflow-hidden rounded-lg border border-neon-cyan/[0.15] bg-ink bg-no-repeat active:cursor-grabbing"
+                  />
+
+                  <div className="mt-3 flex items-center gap-3">
+                    <ZoomIn className="h-4 w-4 shrink-0 text-mist" />
+                    <input
+                      type="range"
+                      min="1"
+                      max={BANNER_ZOOM_MAX}
+                      step="0.01"
+                      value={bannerCrop.zoom}
+                      onChange={(e) => setBannerCrop((current) => ({ ...current, zoom: Number(e.target.value) }))}
+                      className="h-1 flex-1 cursor-pointer accent-neon-cyan"
+                    />
+                    <span className="w-12 text-right font-mono text-[11px] text-mist">
+                      {bannerCrop.zoom.toFixed(2)}x
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setBannerCrop({ zoom: 1, x: 0.5, y: 0.5 })}
+                      className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100"
+                    >
+                      <Move className="h-3 w-3" />
+                      Center
+                    </button>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelBannerCrop}
+                      disabled={bannerApplying}
+                      className="rounded-md border border-zinc-700 px-3 py-1.5 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applyBannerCrop}
+                      disabled={bannerApplying}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-neon-cyan px-3 py-1.5 text-[11px] font-bold text-zinc-950 transition hover:bg-neon-cyan/80 disabled:opacity-50"
+                    >
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      {bannerApplying ? 'Applying…' : 'Use this image'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Password form (opened from the banner) */}
             {pwEditing && (

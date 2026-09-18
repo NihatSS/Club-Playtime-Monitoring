@@ -135,13 +135,28 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 var databaseProvider = builder.Configuration.GetValue<string>("Database:Provider") ?? "Sqlite";
+
+// Host of the PostgreSQL database actually selected by the config below. Logged once at
+// startup (host/port/database only, never credentials) because the one mistake switching
+// providers invites is leaving the OLD connection variable in place: the app then serves
+// stale data from a server you thought you had left, and nothing in the deploy log says so.
+string? selectedPgTarget = null;
+
 builder.Services.AddDbContext<ClubPlaytimeDbContext>(options =>
 {
     if (databaseProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
         databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
     {
-        var pgConn = builder.Configuration.GetConnectionString("PostgresConnection")
-                     ?? builder.Configuration["DATABASE_URL"];
+        // Take whichever connection string the HOST actually provided. appsettings.json
+        // ships a localhost placeholder for local development and that value is never
+        // null, so the previous `GetConnectionString("PostgresConnection") ?? DATABASE_URL`
+        // chain could never reach DATABASE_URL: a host that exports only DATABASE_URL
+        // (Railway's Postgres plugin, Render, Fly, Neon) was silently pointed at
+        // localhost. That made swapping database hosts a two-variable change and a
+        // failed one if the second variable was forgotten.
+        var pgConn = FirstRealConnectionString(
+            builder.Configuration.GetConnectionString("PostgresConnection"),
+            builder.Configuration["DATABASE_URL"]);
 
         // Neon/Railway may provide a URI like postgresql://user:pass@host/db?sslmode=require
         // Railway truncates it at '=' signs, so we parse and rebuild as key=value format
@@ -160,6 +175,16 @@ builder.Services.AddDbContext<ClubPlaytimeDbContext>(options =>
         // Transient failures against hosted Postgres (Neon idle wake-ups, Railway
         // maintenance) previously surfaced as random 500s. Retry a few times with
         // backoff before failing, and pool connections to cut handshake latency.
+        try
+        {
+            var csb = new Npgsql.NpgsqlConnectionStringBuilder(pgConn);
+            selectedPgTarget = $"{csb.Host}:{csb.Port}/{csb.Database} (user {csb.Username})";
+        }
+        catch (ArgumentException)
+        {
+            selectedPgTarget = "<unparseable connection string>";
+        }
+
         options.UseNpgsql(pgConn, npgsql => npgsql.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(3), Array.Empty<string>()));
     }
     else if (databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -326,12 +351,17 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    if (!dbReady)
-    {
-        app.Logger.LogError(
-            "Entering DEGRADED mode: the database is unreachable. Static files still serve; /api answers 503. "
-            + "A background loop keeps retrying (every 2 minutes, or every 30 minutes while the provider reports a plan limit).");
-    }
+if (!dbReady)
+{
+    app.Logger.LogError(
+        "Entering DEGRADED mode: the database is unreachable. Static files still serve; /api answers 503. "
+        + "A background loop keeps retrying (every 2 minutes, or every 30 minutes while the provider reports a plan limit).");
+}
+
+if (selectedPgTarget is not null)
+{
+    app.Logger.LogInformation("PostgreSQL target selected from configuration: {Target}", selectedPgTarget);
+}
 }
 
 if (!dbReady)
@@ -421,6 +451,20 @@ if (!dbReady)
 // That is a billing state, not a transient fault: no retry, backoff or connection
 // tweak can bring the database back. Identifying it lets the app back off to a
 // slow heartbeat and tell the truth in the 503 body instead of thrashing.
+// First candidate that is set and is not a localhost placeholder, so a host-provided
+// DATABASE_URL beats the checked-in development value; otherwise the first value that
+// is merely non-empty, so a deliberate localhost connection still works.
+static string? FirstRealConnectionString(params string?[] candidates)
+{
+    static bool IsLocalPlaceholder(string? value) =>
+        value is null
+        || value.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+        || value.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+
+    return candidates.FirstOrDefault(c => !IsLocalPlaceholder(c))
+           ?? candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
+}
+
 static bool IsQuotaExceeded(Exception? ex)
 {
     return ex switch

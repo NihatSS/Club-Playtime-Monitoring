@@ -1008,8 +1008,16 @@ export default function App() {
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   }, []);
 
+  // Sequence number of the newest details request. Clicking players quickly
+  // leaves several requests in flight, and they do NOT resolve in the order they
+  // were sent — the slowest response used to land last and paint a player the
+  // user had already clicked away from (wrong name, wrong numbers). Only the
+  // newest request is now allowed to write.
+  const detailsRequestSeq = useRef(0);
+
   const loadDetails = useCallback(async (id, seedPlayer) => {
-    if (!id) { setDetails(null); return; }
+    if (!id) { detailsRequestSeq.current += 1; setDetails(null); return; }
+    const requestSeq = ++detailsRequestSeq.current;
     // Paint instantly from data the dashboard list already has (avatar, name,
     // status, today/total playtime, weekly total from the leaderboard). The
     // server response below only adds the chart and month stats on top, so the
@@ -1017,7 +1025,15 @@ export default function App() {
     if (seedPlayer && seedPlayer.id === id) {
       setDetails((prev) => (prev && prev.id === id ? { ...prev, ...seedPlayer } : { ...seedPlayer }));
     }
-    try { const player = await api.player(id); setDetails(player); setError(''); } catch (err) { setError(err.message); }
+    try {
+      const player = await api.player(id);
+      if (requestSeq !== detailsRequestSeq.current) return; // superseded by a newer pick
+      setDetails(player);
+      setError('');
+    } catch (err) {
+      if (requestSeq !== detailsRequestSeq.current) return;
+      setError(err.message);
+    }
   }, []);
 
   useEffect(() => {

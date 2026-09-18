@@ -21,8 +21,26 @@ public sealed class PlayerStatsService(
     {
         var players = await playerRepository.GetAllAsync(trackChanges: false, cancellationToken);
         var todayTotals = await dailyPlaytimeRepository.GetPlaySecondsForDateAsync(DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        var lastGameSeen = await activityRepository.GetLastGameSeenAsync(cancellationToken);
 
-        return players.Select(player => ToPlayerDto(player, todayTotals.GetValueOrDefault(player.Id))).ToList();
+        return players.Select(player => ToPlayerDto(player, todayTotals.GetValueOrDefault(player.Id), lastGameSeen)).ToList();
+    }
+
+    /// <summary>
+    /// "Last seen" for the UI: the live accrual cursor while the player is in the
+    /// target game, otherwise the newest Started/Stopped event on record. The
+    /// monitor deliberately clears LastSeenPlaying when a session ends (so
+    /// rejoining does not count the offline gap as playtime), which left every
+    /// offline player displayed as "Never" even though the history was there.
+    /// </summary>
+    private static DateTime? ResolveLastSeen(Player player, IReadOnlyDictionary<int, DateTime>? lastGameSeen)
+    {
+        if (player.LastSeenPlaying.HasValue)
+        {
+            return player.LastSeenPlaying;
+        }
+
+        return lastGameSeen is not null && lastGameSeen.TryGetValue(player.Id, out var seen) ? seen : null;
     }
 
     public async Task<PlayerDetailsDto?> GetPlayerDetailsAsync(int playerId, CancellationToken cancellationToken = default)
@@ -43,6 +61,16 @@ public sealed class PlayerStatsService(
         // only merges this response (chart + monthly stats) when it arrives.
         var dailyRows = await dailyPlaytimeRepository.GetRangeAsync(player.Id, last30From, today, cancellationToken);
         var recentActivity = await activityRepository.GetRecentForPlayerAsync(player.Id, 20, cancellationToken);
+
+        // Same rule as the dashboard, but answered from the activity page this
+        // request already loaded: the accrual cursor while in game, otherwise the
+        // newest Started/Stopped event in the feed. "Adjusted" rows are ignored.
+        var lastSeen = player.LastSeenPlaying
+                       ?? recentActivity
+                           .Where(activity => string.Equals(activity.EventType, "Started", StringComparison.OrdinalIgnoreCase)
+                                              || string.Equals(activity.EventType, "Stopped", StringComparison.OrdinalIgnoreCase))
+                           .Select(activity => (DateTime?)activity.OccurredAt)
+                           .Max();
 
         // Recent Activity as game sessions: pair Started/Stopped events into
         // sessions (target-game events are reliably paired by the monitor; other
@@ -90,7 +118,7 @@ public sealed class PlayerStatsService(
             player.RobloxUserId,
             GetStatus(player),
             player.CurrentlyPlaying,
-            player.LastSeenPlaying,
+            lastSeen,
             todaySeconds,
             weeklySeconds,
             monthlySeconds,
@@ -204,6 +232,7 @@ public sealed class PlayerStatsService(
     {
         var players = await playerRepository.GetAllAsync(trackChanges: false, cancellationToken);
         var todayTotals = await dailyPlaytimeRepository.GetPlaySecondsForDateAsync(DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        var lastGameSeen = await activityRepository.GetLastGameSeenAsync(cancellationToken);
 
         return players.Select(player => new DashboardPlayerDto(
             player.Id,
@@ -212,7 +241,7 @@ public sealed class PlayerStatsService(
             player.RobloxUserId,
             GetStatus(player),
             player.CurrentlyPlaying,
-            player.LastSeenPlaying,
+            ResolveLastSeen(player, lastGameSeen),
             todayTotals.GetValueOrDefault(player.Id),
             player.TotalPlaySeconds,
             player.AvatarUrl,
@@ -401,7 +430,7 @@ public sealed class PlayerStatsService(
             .ToList();
     }
 
-    private PlayerDto ToPlayerDto(Player player, long todayPlaySeconds)
+    private PlayerDto ToPlayerDto(Player player, long todayPlaySeconds, IReadOnlyDictionary<int, DateTime>? lastGameSeen = null)
     {
         return new PlayerDto(
             player.Id,
@@ -411,7 +440,7 @@ public sealed class PlayerStatsService(
             GetStatus(player),
             player.IsOnline,
             player.CurrentlyPlaying,
-            player.LastSeenPlaying,
+            ResolveLastSeen(player, lastGameSeen),
             todayPlaySeconds,
             player.TotalPlaySeconds,
             player.AvatarUrl,
