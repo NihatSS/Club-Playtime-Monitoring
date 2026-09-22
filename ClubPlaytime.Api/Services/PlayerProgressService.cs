@@ -32,6 +32,45 @@ public sealed class PlayerProgressService(
     /// </summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, SemaphoreSlim> PlayerLocks = new();
 
+    /// <summary>
+    /// Read-path recompute throttle, per player. Every stats/achievements/summary
+    /// GET used to re-derive streaks and achievements from DailyPlaytime (several
+    /// queries + a potential write) before rendering, which made those pages take
+    /// seconds whenever a few were opened in a row. Progress only actually changes
+    /// when playtime is recorded (monitor / admin adjust call UpdatePlayerProgressAsync
+    /// on the write path), so reads recompute at most once per minute per player and
+    /// otherwise render straight from the stored PlayerStreaks/PlayerAchievements rows.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, DateTime> LastReadRecompute = new();
+    private static readonly TimeSpan ReadRecomputeInterval = TimeSpan.FromMinutes(1);
+
+    private static bool ShouldRecomputeOnRead(int playerId)
+    {
+        var now = DateTime.UtcNow;
+        if (LastReadRecompute.TryGetValue(playerId, out var last) && now - last < ReadRecomputeInterval)
+        {
+            return false;
+        }
+
+        // Claim the slot first so N concurrent opens of the same player still run
+        // ONE recompute instead of N (TryUpdate keeps the earliest winner).
+        var claimed = LastReadRecompute.TryUpdate(playerId, now, last)
+                      || LastReadRecompute.TryAdd(playerId, now);
+        return claimed;
+    }
+
+    /// <summary>Force the next read of this player to recompute (called from write paths).</summary>
+    public static void InvalidateProgressCache(int playerId)
+    {
+        LastReadRecompute.TryRemove(playerId, out _);
+    }
+
+    /// <summary>Clears the whole read-recompute throttle (used after bulk imports / recompute-all).</summary>
+    public static void InvalidateAllProgressCaches()
+    {
+        LastReadRecompute.Clear();
+    }
+
     private async Task<T> WithPlayerLockAsync<T>(int playerId, Func<Task<T>> action, CancellationToken cancellationToken)
     {
         var gate = PlayerLocks.GetOrAdd(playerId, _ => new SemaphoreSlim(1, 1));
@@ -225,6 +264,15 @@ public sealed class PlayerProgressService(
             .Where(a => a.PlayerId == playerId)
             .ToDictionaryAsync(a => a.AchievementKey, a => a, cancellationToken);
 
+        // Fast path: everything the catalog defines is already unlocked — there is
+        // nothing to evaluate, so skip the rank count, the tournament query and the
+        // full play-day history (this is the steady state for established players,
+        // and these three queries dominated every stats/achievements read).
+        if (existing.Count >= AchievementCatalog.All.Count)
+        {
+            return unlocked;
+        }
+
         var now = DateTime.UtcNow;
 
         // ── Time-based achievements: player.TotalPlaySeconds (real tracker total) ──
@@ -348,12 +396,13 @@ public sealed class PlayerProgressService(
                 // Date the unlock to when the player's cumulative total first
                 // reached the current 3rd-place threshold, so historical
                 // backfills don't announce a months-old rank as "just now".
+                // Top 3 only: count in the database instead of loading every row.
                 var thirdPlaceSeconds = await dbContext.Players
                     .AsNoTracking()
                     .OrderByDescending(p => p.TotalPlaySeconds)
+                    .Take(3)
                     .Select(p => p.TotalPlaySeconds)
                     .ToListAsync(cancellationToken);
-                thirdPlaceSeconds = thirdPlaceSeconds.Take(3).ToList();
                 rankThreshold = thirdPlaceSeconds.Count == 3 ? thirdPlaceSeconds.Min() : 0;
             }
             else
@@ -418,10 +467,16 @@ public sealed class PlayerProgressService(
         return unlocked;
     }
 
-    /// <summary>Convenience wrapper used after playtime changes: refresh streak, then evaluate achievements.</summary>
+    /// <summary>
+    /// Convenience wrapper used after playtime changes: refresh streak, then
+    /// evaluate achievements. Write paths (monitor scan, admin adjustments, bulk
+    /// imports) go through here, so the read-path throttle is reset to force the
+    /// next read to pick up the new state.
+    /// </summary>
     public Task UpdatePlayerProgressAsync(int playerId, CancellationToken cancellationToken = default) =>
         WithPlayerLockAsync(playerId, async () =>
         {
+            InvalidateProgressCache(playerId);
             await UpdateStreakAsync(playerId, cancellationToken);
             await EvaluateAchievementsAsync(playerId, cancellationToken);
             return true;
@@ -438,6 +493,7 @@ public sealed class PlayerProgressService(
             .Select(p => p.Id)
             .ToListAsync(cancellationToken);
 
+        InvalidateAllProgressCaches();
         foreach (var playerId in playerIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -458,9 +514,15 @@ public sealed class PlayerProgressService(
                 return null;
             }
 
-            // Keep stored state in sync with real data before rendering.
-            await UpdateStreakAsync(playerId, cancellationToken);
-            await EvaluateAchievementsAsync(playerId, cancellationToken);
+            // Keep stored state in sync with real data before rendering — but at
+            // most once per interval per player (see ShouldRecomputeOnRead). Every
+            // badge-page open used to re-derive everything from DailyPlaytime.
+            var recompute = ShouldRecomputeOnRead(playerId);
+            if (recompute)
+            {
+                await UpdateStreakAsync(playerId, cancellationToken);
+                await EvaluateAchievementsAsync(playerId, cancellationToken);
+            }
 
         var unlocks = await dbContext.PlayerAchievements
             .AsNoTracking()
@@ -523,8 +585,16 @@ public sealed class PlayerProgressService(
                 return null;
             }
 
-            var streak = await UpdateStreakAsync(playerId, cancellationToken);
-            await EvaluateAchievementsAsync(playerId, cancellationToken);
+            var recompute = ShouldRecomputeOnRead(playerId);
+            var streak = await dbContext.PlayerStreaks.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.PlayerId == playerId, cancellationToken);
+            if (recompute || streak is null)
+            {
+                // Throttle window elapsed, or first-ever view with no streak row yet —
+                // recompute now so charts, counts and achievements are real.
+                streak = await UpdateStreakAsync(playerId, cancellationToken);
+                await EvaluateAchievementsAsync(playerId, cancellationToken);
+            }
 
         var today = Today;
         var weekFrom = today.AddDays(-6);
@@ -639,8 +709,12 @@ public sealed class PlayerProgressService(
                 return null;
             }
 
-            await UpdateStreakAsync(playerId, cancellationToken);
-            await EvaluateAchievementsAsync(playerId, cancellationToken);
+            var recompute = ShouldRecomputeOnRead(playerId);
+            if (recompute)
+            {
+                await UpdateStreakAsync(playerId, cancellationToken);
+                await EvaluateAchievementsAsync(playerId, cancellationToken);
+            }
 
             var streak = await dbContext.PlayerStreaks.AsNoTracking()
                 .FirstOrDefaultAsync(s => s.PlayerId == playerId, cancellationToken);

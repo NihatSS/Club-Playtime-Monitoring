@@ -530,17 +530,27 @@ public sealed class PlayerStatsService(
             sessions.Add(pending); // still in game (its Stopped is beyond the feed)
         }
 
-        // Resolve real game metadata for the distinct recorded places.
-        var infoByPlace = new Dictionary<long, RobloxGameInfo>();
-        foreach (var placeId in sessions
+        // Resolve real game metadata for the distinct recorded places. Places are
+        // fetched in PARALLEL (each one chains up to three Roblox HTTP calls; the
+        // old sequential loop multiplied that into a long waterfall on the detail
+        // panel / profile). The client dedupes per place and caches for 24h.
+        var distinctPlaces = sessions
             .Where(s => s.PlaceId is not null)
             .Select(s => s.PlaceId!.Value)
-            .Distinct())
+            .Distinct()
+            .ToArray();
+        var infoByPlace = new Dictionary<long, RobloxGameInfo>();
+        if (distinctPlaces.Length > 0)
         {
-            var info = await gameInfoClient.GetByPlaceIdAsync(placeId, cancellationToken);
-            if (info is not null)
+            var lookups = await Task.WhenAll(
+                distinctPlaces.Select(async placeId =>
+                    (PlaceId: placeId, Info: await gameInfoClient.GetByPlaceIdAsync(placeId, cancellationToken))));
+            foreach (var lookup in lookups)
             {
-                infoByPlace[placeId] = info;
+                if (lookup.Info is not null)
+                {
+                    infoByPlace[lookup.PlaceId] = lookup.Info;
+                }
             }
         }
 

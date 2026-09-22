@@ -60,7 +60,11 @@ function baseBannerCrop(width, height, aspect) {
   return { cropW, cropH: cropW / aspect };
 }
 
-/** Source rectangle, in image pixels, selected by the current crop state. */
+/**
+ * Source rectangle, in image pixels, selected by the current crop state.
+ * crop.x / crop.y run 0..1 across the MOVABLE range (how far the selection
+ * window can travel inside the image), so 0.5 is always "centered".
+ */
 function bannerCropRect(source, crop, aspect) {
   const { cropW, cropH } = baseBannerCrop(source.width, source.height, aspect);
   const width = cropW / crop.zoom;
@@ -70,20 +74,6 @@ function bannerCropRect(source, crop, aspect) {
     y: Math.max(0, Math.round(crop.y * (source.height - height))),
     width: Math.max(1, Math.round(width)),
     height: Math.max(1, Math.round(height))
-  };
-}
-
-/**
- * The same crop expressed as CSS background values. Dragging a background with
- * percentage size/position selects exactly the rectangle bannerCropRect returns,
- * which is why the on-screen preview cannot drift from the uploaded image.
- */
-function bannerCropStyle(source, crop, aspect) {
-  const { cropW, cropH } = baseBannerCrop(source.width, source.height, aspect);
-  return {
-    backgroundImage: `url(${source.url})`,
-    backgroundSize: `${((source.width * crop.zoom) / cropW) * 100}% ${((source.height * crop.zoom) / cropH) * 100}%`,
-    backgroundPosition: `${crop.x * 100}% ${crop.y * 100}%`
   };
 }
 
@@ -274,35 +264,48 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   // (x/y run 0..1 across the image, zoom 1 = as much of it as fits the hero).
   const [bannerSource, setBannerSource] = useState(null); // { url, width, height }
   const [bannerCrop, setBannerCrop] = useState({ zoom: 1, x: 0.5, y: 0.5 });
+  const [bannerDragging, setBannerDragging] = useState(false);
   const [bannerAspect, setBannerAspect] = useState(4);
   const [bannerCropOpen, setBannerCropOpen] = useState(false);
   const [bannerApplying, setBannerApplying] = useState(false);
   const bannerHeroRef = useRef(null);
-  const bannerFrameRef = useRef(null);
   const bannerDragRef = useRef(null);
   const bannerSourceUrlRef = useRef(null);
 
+  const profileRequestSeq = useRef(0);
+  const hasProfileRef = useRef(false);
+
   const loadProfile = useCallback(async () => {
-    setLoading(true);
+    // First open shows the loading screen; reloads after saves refresh in place.
+    const requestSeq = ++profileRequestSeq.current;
+    if (!hasProfileRef.current) setLoading(true);
     setError('');
     try {
       const data = await api.myProfile();
+      if (profileRequestSeq.current !== requestSeq) return;
+      hasProfileRef.current = true;
       setProfile(data);
       setDiscordInput(data.discordUserId ?? '');
       setDiscordEditing(false);
+      // Paint immediately: this response already carries the player's playtime,
+      // ranks and progress summary. Recent Activity / presence / the 7-day donut
+      // come from the heavier player-details call, which now streams in after
+      // first paint instead of blocking the whole page behind it.
+      setLoading(false);
       if (data.player?.id) {
-        try {
-          const playerDetails = await api.player(data.player.id);
-          setDetails(playerDetails);
-        } catch {
-          setDetails(null); // activity/status cards are optional
-        }
+        api.player(data.player.id)
+          .then((playerDetails) => {
+            if (profileRequestSeq.current === requestSeq) setDetails(playerDetails);
+          })
+          .catch(() => {
+            if (profileRequestSeq.current === requestSeq) setDetails(null); // activity/status cards are optional
+          });
       } else {
         setDetails(null);
       }
     } catch (err) {
+      if (profileRequestSeq.current !== requestSeq) return;
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   }, []);
@@ -428,9 +431,11 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
   }
 
   function onBannerDragStart(event) {
-    const frame = bannerFrameRef.current;
-    if (!frame || !bannerSource) return;
-    const rect = frame.getBoundingClientRect();
+    if (!bannerSource) return;
+    // The stage shows the FULL image, so its rect is the displayed image box.
+    // Dragging is 1:1: moving the pointer by X pixels moves the selection by the
+    // same on-screen distance (span = displayed overflow of the movable range).
+    const rect = event.currentTarget.getBoundingClientRect();
     const { cropW, cropH } = baseBannerCrop(bannerSource.width, bannerSource.height, bannerAspect);
     const visibleW = cropW / bannerCrop.zoom;
     const visibleH = cropH / bannerCrop.zoom;
@@ -440,10 +445,11 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
       startY: event.clientY,
       cropX: bannerCrop.x,
       cropY: bannerCrop.y,
-      // How far the drag may travel before an image edge reaches the frame.
-      spanX: Math.max(1, rect.width * (bannerSource.width / visibleW - 1)),
-      spanY: Math.max(1, rect.height * (bannerSource.height / visibleH - 1))
+      // How far the selection can still travel, in DISPLAYED pixels.
+      spanX: rect.width * (1 - visibleW / bannerSource.width),
+      spanY: rect.height * (1 - visibleH / bannerSource.height)
     };
+    setBannerDragging(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -454,8 +460,8 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     const dy = event.clientY - drag.startY;
     setBannerCrop((current) => ({
       ...current,
-      x: clamp01(drag.cropX - dx / drag.spanX),
-      y: clamp01(drag.cropY - dy / drag.spanY)
+      x: drag.spanX > 0.5 ? clamp01(drag.cropX + dx / drag.spanX) : current.x,
+      y: drag.spanY > 0.5 ? clamp01(drag.cropY + dy / drag.spanY) : current.y
     }));
   }
 
@@ -463,6 +469,7 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     const drag = bannerDragRef.current;
     if (!drag) return;
     bannerDragRef.current = null;
+    setBannerDragging(false);
     if (event.currentTarget.hasPointerCapture?.(drag.pointerId)) {
       event.currentTarget.releasePointerCapture(drag.pointerId);
     }
@@ -698,6 +705,20 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
     : null;
   const heroImage = bannerPreview ?? bannerImageUrl ?? profile.bannerUrl;
 
+  // Crop-editor overlay geometry: the selection window drawn over the FULL
+  // image, as percentages of the displayed image, plus whether the window can
+  // move at all (a window covering everything has nowhere to go).
+  const cropRectPreview = bannerSource ? bannerCropRect(bannerSource, bannerCrop, bannerAspect) : null;
+  const bannerSelPct = cropRectPreview && bannerSource
+    ? {
+        left: (cropRectPreview.x / bannerSource.width) * 100,
+        top: (cropRectPreview.y / bannerSource.height) * 100,
+        width: (cropRectPreview.width / bannerSource.width) * 100,
+        height: (cropRectPreview.height / bannerSource.height) * 100
+      }
+    : null;
+  const bannerCanMove = !!bannerSelPct && (bannerSelPct.width < 99.9 || bannerSelPct.height < 99.9);
+
   return (
     <div className="min-h-screen bg-[#050510] text-zinc-50">
       <Header user={user} avatarUrl={avatarUrl} isAdmin={isAdmin} onLogout={onLogout} />
@@ -903,13 +924,11 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                 shape, so positioning here is what the banner will really show. */}
             {bannerCropOpen && bannerSource && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-                <div className="w-full max-w-2xl rounded-xl border border-neon-cyan/20 bg-[#0d0d1a] p-4 shadow-2xl">
-                  <div className="flex items-start justify-between gap-3">
+                <div className="w-full max-w-2xl rounded-xl border border-neon-cyan/20 bg-[#0d0d1a] p-4 shadow-2xl">                  <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-zinc-100">Adjust banner image</div>
                       <div className="mt-0.5 text-[11px] text-mist">
-                        This frame is exactly what the banner shows. Drag to choose the part you want, zoom in to
-                        fill it with less of the photo.
+                        Drag the bright window to choose the part the banner shows. Zoom to make the window bigger or smaller.
                       </div>
                     </div>
                     <button
@@ -921,15 +940,51 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                     </button>
                   </div>
 
+                  {/* Full image with the selection drawn on top: what is bright
+                      inside the window is exactly what the banner will show. The
+                      whole stage is draggable; the window cannot move when it
+                      already covers the full image (then zoom out first). */}
                   <div
-                    ref={bannerFrameRef}
                     onPointerDown={onBannerDragStart}
                     onPointerMove={onBannerDragMove}
                     onPointerUp={onBannerDragEnd}
                     onPointerCancel={onBannerDragEnd}
-                    style={{ ...bannerCropStyle(bannerSource, bannerCrop, bannerAspect), aspectRatio: bannerAspect }}
-                    className="mt-3 w-full cursor-grab touch-none select-none overflow-hidden rounded-lg border border-neon-cyan/[0.15] bg-ink bg-no-repeat active:cursor-grabbing"
-                  />
+                    className={`relative mt-3 w-full touch-none select-none overflow-hidden rounded-lg border border-neon-cyan/[0.15] bg-ink ${
+                      bannerCanMove ? (bannerDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+                    }`}
+                  >
+                    <img
+                      src={bannerSource.url}
+                      alt=""
+                      draggable={false}
+                      className="block max-h-80 w-full object-contain"
+                    />
+                    {bannerSelPct && (
+                      <div
+                        className="absolute rounded-md ring-2 ring-neon-cyan"
+                        style={{
+                          left: `${bannerSelPct.left}%`,
+                          top: `${bannerSelPct.top}%`,
+                          width: `${bannerSelPct.width}%`,
+                          height: `${bannerSelPct.height}%`,
+                          boxShadow: '0 0 0 9999px rgba(5,5,16,0.65)',
+                          transition: bannerDragging ? 'none' : 'all 120ms ease-out'
+                        }}
+                      >
+                        {/* Corner grips make the window read as movable */}
+                        {['left-0 top-0 border-l-2 border-t-2 rounded-tl-md', 'right-0 top-0 border-r-2 border-t-2 rounded-tr-md', 'left-0 bottom-0 border-l-2 border-b-2 rounded-bl-md', 'right-0 bottom-0 border-r-2 border-b-2 rounded-br-md'].map((pos) => (
+                          <span key={pos} className={`absolute h-4 w-4 border-neon-cyan ${pos}`} />
+                        ))}
+                        {!bannerDragging && bannerCanMove && (
+                          <span className="pointer-events-none absolute inset-0 grid place-items-center">
+                            <span className="rounded-md bg-zinc-950/80 px-2 py-1 text-[10px] font-semibold text-zinc-100 backdrop-blur">
+                              Drag to reposition
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="mt-3 flex items-center gap-3">
                     <ZoomIn className="h-4 w-4 shrink-0 text-mist" />
@@ -948,7 +1003,9 @@ export default function ProfilePage({ onBack, user, avatarUrl, isAdmin, onLogout
                     <button
                       type="button"
                       onClick={() => setBannerCrop({ zoom: 1, x: 0.5, y: 0.5 })}
-                      className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100"
+                      disabled={!bannerCanMove}
+                      title={bannerCanMove ? 'Center the selection' : 'The window already covers the whole image'}
+                      className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Move className="h-3 w-3" />
                       Center

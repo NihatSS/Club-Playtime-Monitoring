@@ -986,7 +986,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState('daily');
   const [sortDirection, setSortDirection] = useState('desc');
   const [page, setPage] = useState(1);
-  const CARD_PAGE_SIZE = 9;
+  const CARD_PAGE_SIZE = 12;
   const TABLE_PAGE_SIZE = 10;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);

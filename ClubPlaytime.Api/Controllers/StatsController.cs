@@ -3,6 +3,7 @@ using ClubPlaytime.Api.DTOs;
 using ClubPlaytime.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClubPlaytime.Api.Controllers;
@@ -20,6 +21,7 @@ public sealed class StatsController(
 {
     /// <summary>Public: full statistics for a tracker player (streaks, ranks, charts).</summary>
     [HttpGet("players/{playerId:int}")]
+    [OutputCache(PolicyName = "PublicShort")]
     public async Task<ActionResult<PlayerStatsDto>> GetPlayerStats(int playerId, CancellationToken cancellationToken)
     {
         var stats = await progressService.GetStatsAsync(playerId, cancellationToken);
@@ -28,6 +30,7 @@ public sealed class StatsController(
 
     /// <summary>Public: all achievements for a tracker player with progress.</summary>
     [HttpGet("players/{playerId:int}/achievements")]
+    [OutputCache(PolicyName = "PublicShort")]
     public async Task<ActionResult<PlayerAchievementsDto>> GetPlayerAchievements(int playerId, CancellationToken cancellationToken)
     {
         var achievements = await progressService.GetAchievementsAsync(playerId, cancellationToken);

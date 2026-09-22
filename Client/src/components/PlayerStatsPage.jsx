@@ -113,44 +113,37 @@ export default function PlayerStatsPage({ playerId: playerIdProp, user, avatarUr
   // Resolve which player to show. A route param (#/stats/{id}) always wins —
   // that's how the player detail panel deep-links here. Without one, show the
   // signed-in user's linked player, else the first tracker player.
+  // The profile and dashboard calls run in PARALLEL (they used to be awaited in
+  // sequence, doubling the wait before the stats request could even start; both
+  // are output-cached and micro-cached, so repeat visits are instant).
   useEffect(() => {
     let cancelled = false;
-    async function loadPlayerOptions() {
-      try {
-        const dashboard = await api.dashboard();
-        if (!cancelled) setPlayerOptions(dashboard);
-      } catch {
-        // Options only power the "view another player" search; ignore errors.
-      }
-    }
     async function resolveDefault() {
+      const dashboardPromise = api.dashboard().catch(() => null);
+      let profilePromise = null;
+      if (user && playerIdProp == null) {
+        profilePromise = api.myProfile().catch(() => null);
+      }
+
       if (playerIdProp) {
         setPlayerId(playerIdProp);
-        await loadPlayerOptions();
+        const dashboard = await dashboardPromise;
+        if (!cancelled && dashboard) setPlayerOptions(dashboard);
         return;
       }
-      if (user) {
-        try {
-          const profile = await api.myProfile();
-          if (!cancelled && profile?.player?.id) {
-            setPlayerId(profile.player.id);
-            await loadPlayerOptions();
-            return;
-          }
-        } catch {
-          // fall through to player list
-        }
+
+      const [profile, dashboard] = await Promise.all([profilePromise, dashboardPromise]);
+      if (cancelled) return;
+
+      if (profile?.player?.id) {
+        setPlayerId(profile.player.id);
       }
-      try {
-        const dashboard = await api.dashboard();
-        if (!cancelled) {
-          setPlayerOptions(dashboard);
-          if (dashboard.length > 0) {
-            setPlayerId((current) => current ?? dashboard[0].id);
-          }
-        }
-      } catch (err) {
-        if (!cancelled) setError(err.message);
+      if (dashboard) {
+        setPlayerOptions(dashboard);
+        setPlayerId((current) => current ?? (dashboard.length > 0 ? dashboard[0].id : null));
+      }
+      if (!profile?.player?.id && !dashboard) {
+        setError('Could not load the tracker data. Please refresh.');
       }
     }
     resolveDefault();
