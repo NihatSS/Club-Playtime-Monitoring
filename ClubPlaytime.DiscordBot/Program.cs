@@ -8,7 +8,20 @@ var builder = WebApplication.CreateBuilder(args);
 // Configure Discord.NET
 builder.Services.AddSingleton(sp => new DiscordSocketClient(new DiscordSocketConfig
 {
-    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildMessages,
+    // Guilds is all this bot needs: every command is an interaction (slash command,
+    // button, modal), and interactions are not gated behind any intent, while the
+    // guild cache is what resolves the daily-post channel. GuildMessages made
+    // Discord push every message posted in the guild to this process, and
+    // Discord.Net parses and retains them (MessageCacheSize per channel) even
+    // though nothing here handles messages — pure resident memory on a container
+    // that is billed by the MB.
+    GatewayIntents = GatewayIntents.Guilds,
+
+    // Message caching disabled for the same reason: no code path in this bot reads
+    // a cached message, and the default (100 messages per channel) accumulates for
+    // the whole lifetime of the process.
+    MessageCacheSize = 0,
+
     LogLevel = LogSeverity.Info
 }));
 

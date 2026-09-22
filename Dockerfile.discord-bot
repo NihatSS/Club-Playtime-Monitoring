@@ -10,4 +10,24 @@ RUN dotnet publish ClubPlaytime.DiscordBot/ClubPlaytime.DiscordBot.csproj -c Rel
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
+
+# Railway bills memory by the second and this bot is a SECOND .NET process next to
+# the API, so its idle footprint matters just as much. Projects built with
+# Microsoft.NET.Sdk.Web (both of these) get "System.GC.Server": true in their
+# runtimeconfig.json by default, which gives the runtime one heap per CPU core —
+# on a multi-core container that is tens of MB of resident memory for a process
+# that only serves two HTTP routes and answers a handful of slash commands.
+# The API image already overrides that; the bot image did not, so it ran with
+# Server GC, no heap ceiling and the diagnostics socket enabled.
+#   gcServer=0        — one workstation heap instead of a heap per core.
+#   GCConserveMemory  — biases the GC towards a smaller heap over throughput.
+#   GCHeapHardLimit   — 96 MB ceiling (0x6000000) so the heap cannot creep up.
+#   EnableDiagnostics — drops the diagnostics IPC socket and its buffers.
+#   TieredPGO         — cheaper steady-state JIT for a long-running process.
+ENV DOTNET_gcServer=0 \
+    DOTNET_GCConserveMemory=9 \
+    DOTNET_GCHeapHardLimit=0x6000000 \
+    DOTNET_EnableDiagnostics=0 \
+    DOTNET_TieredPGO=1
+
 ENTRYPOINT ["dotnet", "ClubPlaytime.DiscordBot.dll"]

@@ -41,6 +41,15 @@ builder.Services.AddResponseCompression(options =>
 // responses for a few seconds collapses N concurrent visitors into ~1 DB hit.
 builder.Services.AddOutputCache(options =>
 {
+    // Cached bodies are held in memory until they expire. The framework defaults
+    // (100 MB total, 64 MB per response) are ceilings this container could never
+    // afford, so both are pinned to what the cached public JSON actually needs:
+    // the biggest response (the dashboard) is a few tens of KB under compression.
+    // A response larger than MaximumBodySize is simply served without caching, so
+    // this bounds retained memory without changing what clients receive.
+    options.SizeLimit = 16 * 1024 * 1024;
+    options.MaximumBodySize = 512 * 1024;
+
     // No base policy: endpoints that don't opt into a named policy are simply
     // not cached (a base policy with Expire would either cache everything or,
     // with TimeSpan.Zero, throw for every unmatched request).

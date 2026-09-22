@@ -68,9 +68,30 @@ public sealed class RobloxGameInfoClient(IHttpClientFactory httpClientFactory) :
         }
     }
 
+    // Ceiling that triggers a sweep of expired entries. This dictionary lives for
+    // the whole process and a key is added per distinct Roblox game ever seen in
+    // the activity feed, so without a sweep it kept every game resident forever
+    // (even long after its 24h TTL, when a request would re-fetch it anyway).
+    private const int CacheSweepThreshold = 256;
+
     private static void Store(string key, RobloxGameInfo? info)
     {
         Cache[key] = (info, DateTime.UtcNow);
+
+        if (Cache.Count <= CacheSweepThreshold)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var (cacheKey, entry) in Cache)
+        {
+            var lifetime = entry.Info is null ? NegativeCacheLifetime : CacheLifetime;
+            if (now - entry.CachedAt >= lifetime)
+            {
+                Cache.TryRemove(cacheKey, out _);
+            }
+        }
     }
 
     private async Task<RobloxGameInfo?> FetchAsync(long placeId)
